@@ -12,8 +12,6 @@ import (
 
 func SeedMasterData(db *gorm.DB, username, email, password string) error {
 
-	// 1. ✅ Sabse Pehle: Create Master Tenant
-	// Kyunki Roles aur Users ko TenantID chahiye hoti hai (Shared DB logic ke liye)
 	masterTenant := models.Tenant{
 		Name:         "Master Tenant",
 		DatabaseType: models.SharedDB,
@@ -21,13 +19,11 @@ func SeedMasterData(db *gorm.DB, username, email, password string) error {
 		IsActive:     true,
 	}
 
-	// FirstOrCreate check karega name par
 	if err := db.Where("name = ?", masterTenant.Name).FirstOrCreate(&masterTenant).Error; err != nil {
 		log.Printf("warning: failed to seed tenant %s: %v", masterTenant.Name, err)
 		return err
 	}
 
-	// 2. Create Global Modules (Definitions)
 	modules := []models.Module{
 		{Name: "User Management", Description: "Manage users and their permissions"},
 		{Name: "Tenant Management", Description: "Manage tenants and their databases"},
@@ -41,8 +37,6 @@ func SeedMasterData(db *gorm.DB, username, email, password string) error {
 		}
 	}
 
-	// 3. Create Global Permissions (Ingredients)
-	// Ye permissions baad mein Tenant DBs mein copy hongi
 	permissions := []models.Permission{
 
 		// User Management Permissions
@@ -80,23 +74,18 @@ func SeedMasterData(db *gorm.DB, username, email, password string) error {
 		}
 	}
 
-	// 4. Create System Roles
-	// ✅ FIX: Sirf "Super Administrator" banayenge.
-	// "Tenant Admin" roles Tenant DB mein banenge, Master mein nahi.
 	superAdminRole := models.Role{
 		Name:         "Super Administrator",
 		Description:  "Full system access with all permissions",
 		IsSystemRole: true,
-		TenantID:     masterTenant.ID, // ✅ Role ko Master Tenant ke sath link kiya
+		TenantID:     masterTenant.ID,
 	}
 
-	// Note: FirstOrCreate mein conditions use kar rahe hain taaki duplicate na bane
 	if err := db.Where("name = ? AND tenant_id = ?", superAdminRole.Name, masterTenant.ID).
 		FirstOrCreate(&superAdminRole).Error; err != nil {
 		return err
 	}
 
-	// 5. Assign ALL permissions to Super Administrator role
 	var allPermissions []models.Permission
 	if err := db.Find(&allPermissions).Error; err != nil {
 		return err
@@ -106,7 +95,6 @@ func SeedMasterData(db *gorm.DB, username, email, password string) error {
 		log.Printf("warning: failed to assign all permissions to Super Administrator: %v", err)
 	}
 
-	// 6. Create or update Super Admin User
 	if username == "" {
 		username = os.Getenv("SUPERADMIN_USERNAME")
 	}
@@ -129,7 +117,7 @@ func SeedMasterData(db *gorm.DB, username, email, password string) error {
 	}
 
 	var admin models.User
-	// Check against Master Tenant ID
+
 	err := db.Where("(username = ? OR email = ?) AND tenant_id = ?", username, email, masterTenant.ID).First(&admin).Error
 
 	hashed, errHash := utils.HashPassword(password)
@@ -139,7 +127,7 @@ func SeedMasterData(db *gorm.DB, username, email, password string) error {
 
 	if err == gorm.ErrRecordNotFound {
 		admin = models.User{
-			TenantID: masterTenant.ID, // ✅ User ko Master Tenant mein dala
+			TenantID: masterTenant.ID,
 			Username: username,
 			Email:    email,
 			Password: hashed,
@@ -150,7 +138,7 @@ func SeedMasterData(db *gorm.DB, username, email, password string) error {
 		}
 		log.Printf("Superadmin user '%s' created in Master Tenant", username)
 	} else if err == nil {
-		// Update existing superadmin
+
 		admin.Password = hashed
 		admin.IsActive = true
 		if err := db.Save(&admin).Error; err != nil {
@@ -161,7 +149,6 @@ func SeedMasterData(db *gorm.DB, username, email, password string) error {
 		return err
 	}
 
-	// 7. Assign Super Administrator role to User
 	if err := db.Model(&admin).Association("Roles").Append(&superAdminRole); err != nil {
 		log.Printf("warning: failed to attach super role to admin: %v", err)
 	}

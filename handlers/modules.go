@@ -21,13 +21,13 @@ func NewModuleHandler(svc *services.ModuleService) *ModuleHandler {
 }
 
 func (h *ModuleHandler) CreateModule(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB) // ✅ Get DB
+	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 	var m models.Module
 	if err := c.ShouldBindJSON(&m); err != nil {
 		utils.ErrorResponse(c, http.StatusBadRequest, "invalid body", err)
 		return
 	}
-	if err := h.svc.Create(tenantDB, &m); err != nil { // ✅ Pass DB
+	if err := h.svc.Create(tenantDB, &m); err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to create module", err)
 		return
 	}
@@ -35,10 +35,10 @@ func (h *ModuleHandler) CreateModule(c *gin.Context) {
 }
 
 func (h *ModuleHandler) GetModule(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB) // ✅ Get DB
+	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 	idStr := c.Param("id")
 	id64, _ := strconv.ParseUint(idStr, 10, 32)
-	m, err := h.svc.GetByID(tenantDB, uint(id64)) // ✅ Pass DB
+	m, err := h.svc.GetByID(tenantDB, uint(id64))
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusNotFound, "module not found", err)
 		return
@@ -47,8 +47,8 @@ func (h *ModuleHandler) GetModule(c *gin.Context) {
 }
 
 func (h *ModuleHandler) ListModules(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB) // ✅ Get DB
-	mods, err := h.svc.List(tenantDB)            // ✅ Pass DB
+	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
+	mods, err := h.svc.List(tenantDB)
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to list modules", err)
 		return
@@ -57,7 +57,7 @@ func (h *ModuleHandler) ListModules(c *gin.Context) {
 }
 
 func (h *ModuleHandler) UpdateModule(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB) // ✅ Get DB
+	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 	idStr := c.Param("id")
 	id64, _ := strconv.ParseUint(idStr, 10, 32)
 	var m models.Module
@@ -66,7 +66,7 @@ func (h *ModuleHandler) UpdateModule(c *gin.Context) {
 		return
 	}
 	m.ID = uint(id64)
-	if err := h.svc.Update(tenantDB, &m); err != nil { // ✅ Pass DB
+	if err := h.svc.Update(tenantDB, &m); err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to update module", err)
 		return
 	}
@@ -74,10 +74,10 @@ func (h *ModuleHandler) UpdateModule(c *gin.Context) {
 }
 
 func (h *ModuleHandler) DeleteModule(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB) // ✅ Get DB
+	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 	idStr := c.Param("id")
 	id64, _ := strconv.ParseUint(idStr, 10, 32)
-	if err := h.svc.Delete(tenantDB, uint(id64)); err != nil { // ✅ Pass DB
+	if err := h.svc.Delete(tenantDB, uint(id64)); err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to delete module", err)
 		return
 	}

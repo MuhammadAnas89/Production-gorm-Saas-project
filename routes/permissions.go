@@ -11,12 +11,12 @@ import (
 func RegisterPermissionRoutes(rg *gin.RouterGroup, svc *services.PermissionService) {
 	h := handlers.NewPermissionHandler(svc)
 	perms := rg.Group("/permissions")
-	perms.Use(middleware.PermissionMiddleware("admin:full"))
+
 	{
-		perms.POST("", h.CreatePermission)
-		perms.GET("", h.ListPermissions)
-		perms.GET(":id", h.GetPermission)
-		perms.PUT(":id", h.UpdatePermission)
-		perms.DELETE(":id", h.DeletePermission)
+		perms.GET("", middleware.PermissionMiddleware("role:read"), h.ListPermissions)
+		perms.GET(":id", middleware.PermissionMiddleware("role:read"), h.GetPermission)
+		perms.POST("", middleware.PermissionMiddleware("permission:manage"), h.CreatePermission)
+		perms.PUT(":id", middleware.PermissionMiddleware("permission:manage"), h.UpdatePermission)
+		perms.DELETE(":id", middleware.PermissionMiddleware("permission:manage"), h.DeletePermission)
 	}
 }

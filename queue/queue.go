@@ -36,11 +36,10 @@ func NewQueue() *Queue {
 	q := &Queue{
 		jobs:         make([]Job, 0),
 		completed:    make([]Job, 0),
-		maxCompleted: 1000, // Maximum completed jobs to keep
+		maxCompleted: 1000,
 	}
 	q.notEmpty = sync.NewCond(&q.mu)
 
-	// Start cleanup goroutine
 	go q.startCleanupWorker()
 
 	return q
@@ -75,16 +74,14 @@ func (q *Queue) MarkCompleted(jobID string, result string, err error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	// Find job in pending queue (in case it's still there)
 	for i, job := range q.jobs {
 		if job.ID == jobID {
-			// Remove from pending
+
 			q.jobs = append(q.jobs[:i], q.jobs[i+1:]...)
 			break
 		}
 	}
 
-	// Add to completed with status
 	completedJob := Job{
 		ID:        jobID,
 		Status:    JobStatusCompleted,
@@ -99,7 +96,6 @@ func (q *Queue) MarkCompleted(jobID string, result string, err error) {
 
 	q.completed = append(q.completed, completedJob)
 
-	// Trim completed jobs if exceeds limit
 	if len(q.completed) > q.maxCompleted {
 		q.completed = q.completed[len(q.completed)-q.maxCompleted:]
 	}
@@ -109,14 +105,12 @@ func (q *Queue) GetJobStatus(jobID string) (Job, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	// Check in pending queue
 	for _, job := range q.jobs {
 		if job.ID == jobID {
 			return job, true
 		}
 	}
 
-	// Check in completed queue
 	for _, job := range q.completed {
 		if job.ID == jobID {
 			return job, true
@@ -154,7 +148,6 @@ func (q *Queue) IsEmpty() bool {
 	return len(q.jobs) == 0
 }
 
-// Cleanup completed jobs older than 1 hour
 func (q *Queue) CleanupCompletedJobs() int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -162,7 +155,6 @@ func (q *Queue) CleanupCompletedJobs() int {
 	cutoffTime := time.Now().Add(-1 * time.Hour)
 	initialCount := len(q.completed)
 
-	// Filter out jobs older than 1 hour
 	filtered := make([]Job, 0)
 	for _, job := range q.completed {
 		if job.UpdatedAt.After(cutoffTime) {
@@ -177,13 +169,13 @@ func (q *Queue) CleanupCompletedJobs() int {
 }
 
 func (q *Queue) startCleanupWorker() {
-	ticker := time.NewTicker(30 * time.Minute) // Check every 30 minutes
+	ticker := time.NewTicker(30 * time.Minute)
 	defer ticker.Stop()
 
 	for range ticker.C {
 		cleaned := q.CleanupCompletedJobs()
 		if cleaned > 0 {
-			// Log cleanup activity (you can replace with your logger)
+
 			println("Queue cleanup: removed", cleaned, "completed jobs older than 1 hour")
 		}
 	}

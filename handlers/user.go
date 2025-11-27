@@ -45,12 +45,8 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	// ❌ REMOVED: tenantDB ki yahan zaroorat nahi hai, Worker khud connect karega
-	// tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-
 	currentUser := c.MustGet("user").(*models.User)
 
-	// ✅ FIX: Removed 'tenantDB' from arguments
 	jobID, err := h.queueService.EnqueueUserCreation(
 		currentUser.TenantID,
 		&services.CreateUserRequest{

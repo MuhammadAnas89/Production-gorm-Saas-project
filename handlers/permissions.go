@@ -21,13 +21,13 @@ func NewPermissionHandler(svc *services.PermissionService) *PermissionHandler {
 }
 
 func (h *PermissionHandler) CreatePermission(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB) // ✅ Get DB
+	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 	var p models.Permission
 	if err := c.ShouldBindJSON(&p); err != nil {
 		utils.ErrorResponse(c, http.StatusBadRequest, "invalid body", err)
 		return
 	}
-	if err := h.svc.Create(tenantDB, &p); err != nil { // ✅ Pass DB
+	if err := h.svc.Create(tenantDB, &p); err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to create permission", err)
 		return
 	}
@@ -35,10 +35,10 @@ func (h *PermissionHandler) CreatePermission(c *gin.Context) {
 }
 
 func (h *PermissionHandler) GetPermission(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB) // ✅ Get DB
+	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 	idStr := c.Param("id")
 	id64, _ := strconv.ParseUint(idStr, 10, 32)
-	p, err := h.svc.GetByID(tenantDB, uint(id64)) // ✅ Pass DB
+	p, err := h.svc.GetByID(tenantDB, uint(id64))
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusNotFound, "permission not found", err)
 		return
@@ -47,8 +47,8 @@ func (h *PermissionHandler) GetPermission(c *gin.Context) {
 }
 
 func (h *PermissionHandler) ListPermissions(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB) // ✅ Get DB
-	perms, err := h.svc.List(tenantDB)           // ✅ Pass DB
+	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
+	perms, err := h.svc.List(tenantDB)
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to list permissions", err)
 		return
@@ -57,7 +57,7 @@ func (h *PermissionHandler) ListPermissions(c *gin.Context) {
 }
 
 func (h *PermissionHandler) UpdatePermission(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB) // ✅ Get DB
+	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 	idStr := c.Param("id")
 	id64, _ := strconv.ParseUint(idStr, 10, 32)
 	var p models.Permission
@@ -66,7 +66,7 @@ func (h *PermissionHandler) UpdatePermission(c *gin.Context) {
 		return
 	}
 	p.ID = uint(id64)
-	if err := h.svc.Update(tenantDB, &p); err != nil { // ✅ Pass DB
+	if err := h.svc.Update(tenantDB, &p); err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to update permission", err)
 		return
 	}
@@ -74,10 +74,10 @@ func (h *PermissionHandler) UpdatePermission(c *gin.Context) {
 }
 
 func (h *PermissionHandler) DeletePermission(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB) // ✅ Get DB
+	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 	idStr := c.Param("id")
 	id64, _ := strconv.ParseUint(idStr, 10, 32)
-	if err := h.svc.Delete(tenantDB, uint(id64)); err != nil { // ✅ Pass DB
+	if err := h.svc.Delete(tenantDB, uint(id64)); err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to delete permission", err)
 		return
 	}

@@ -8,14 +8,12 @@ import (
 )
 
 type PermissionService struct {
-	// ❌ FIX: Repo removed
 }
 
 func NewPermissionService() *PermissionService {
 	return &PermissionService{}
 }
 
-// ✅ FIX: Methods now accept DB connection
 func (s *PermissionService) Create(db *gorm.DB, p *models.Permission) error {
 	return repositories.NewPermissionRepository(db).Create(p)
 }

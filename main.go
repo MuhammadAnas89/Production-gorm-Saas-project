@@ -13,20 +13,20 @@ import (
 func main() {
 	cfg := config.Load()
 
-	// Initialize master database
 	if err := config.InitMasterDB(cfg); err != nil {
 		log.Fatal("Failed to initialize master database:", err)
 	}
+	if err := config.InitRedis(cfg); err != nil {
 
-	// Initialize tenant manager
+		log.Printf("Warning: Redis Connection Failed: %v", err)
+	}
+
 	config.InitTenantManager(cfg)
 
-	// Create shared database
 	if err := config.TenantManager.CreateSharedDatabase(); err != nil {
 		log.Printf("Warning: Failed to create shared database: %v", err)
 	}
 
-	// Ensure minimal master data (super-admin + core permissions/role).
 	saUser := os.Getenv("SUPERADMIN_USERNAME")
 	saEmail := os.Getenv("SUPERADMIN_EMAIL")
 	saPass := os.Getenv("SUPERADMIN_PASSWORD")
@@ -34,8 +34,8 @@ func main() {
 		log.Printf("Warning: Failed to ensure master seed data: %v", err)
 	}
 
+	services.StartCronJob()
 	log.Println("Server initialization completed successfully")
-
 	router := gin.Default()
 	routes.SetupRoutes(router)
 

@@ -1,19 +1,20 @@
 package middleware
 
 import (
+	"fmt"
 	"go-multi-tenant/config"
 	"go-multi-tenant/models"
 	"go-multi-tenant/repositories"
 	"go-multi-tenant/services"
 	"go-multi-tenant/utils"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
 func TenantDBMiddleware(authService *services.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 1. Agar AuthMiddleware ne pehle hi DB set kar diya hai, wahi use karo
 		if _, exists := c.Get("tenantDB"); exists {
 			c.Next()
 			return
@@ -34,20 +35,31 @@ func TenantDBMiddleware(authService *services.AuthService) gin.HandlerFunc {
 
 		user := userInterface.(*models.User)
 
-		// ✅ Super Administrator always uses Master DB
 		if user.HasRole("Super Administrator") {
 			c.Set("tenantDB", config.MasterDB)
 			c.Next()
 			return
 		}
 
-		// 2. Tenant Info fetch karo
-		tenantRepo := repositories.NewTenantRepository(config.MasterDB)
-		tenant, err := tenantRepo.GetByID(user.TenantID)
-		if err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to get tenant information", err)
-			c.Abort()
-			return
+		var tenant models.Tenant
+		cacheKey := fmt.Sprintf("tenant_info:%d", user.TenantID)
+
+		err := config.GetCacheStruct(cacheKey, &tenant)
+
+		if err == nil {
+
+		} else {
+
+			tenantRepo := repositories.NewTenantRepository(config.MasterDB)
+			dbTenant, dbErr := tenantRepo.GetByID(user.TenantID)
+			if dbErr != nil {
+				utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to get tenant information", dbErr)
+				c.Abort()
+				return
+			}
+			tenant = *dbTenant
+
+			_ = config.SetCacheStruct(cacheKey, tenant, 30*time.Minute)
 		}
 
 		if !tenant.IsActive {
@@ -56,21 +68,17 @@ func TenantDBMiddleware(authService *services.AuthService) gin.HandlerFunc {
 			return
 		}
 
-		// 3. Raw Database Connection lo
-		rawDB, err := config.TenantManager.GetTenantDB(tenant)
+		rawDB, err := config.TenantManager.GetTenantDB(&tenant)
 		if err != nil {
 			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to connect to tenant database", err)
 			c.Abort()
 			return
 		}
 
-		// ✅ CRITICAL FIX FOR SHARED DB: Scope Injection
-		// Agar Shared DB hai, to hum us par TenantID ka filter permanent laga denge is request ke liye.
 		if tenant.DatabaseType == models.SharedDB {
 			scopedDB := rawDB.Where("tenant_id = ?", tenant.ID)
 			c.Set("tenantDB", scopedDB)
 		} else {
-			// Dedicated DB mein filter ki zaroorat nahi
 			c.Set("tenantDB", rawDB)
 		}
 

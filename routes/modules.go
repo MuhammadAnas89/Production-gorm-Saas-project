@@ -11,12 +11,12 @@ import (
 func RegisterModuleRoutes(rg *gin.RouterGroup, svc *services.ModuleService) {
 	h := handlers.NewModuleHandler(svc)
 	mods := rg.Group("/modules")
-	mods.Use(middleware.PermissionMiddleware("admin:full"))
+
 	{
-		mods.POST("", h.CreateModule)
-		mods.GET("", h.ListModules)
-		mods.GET(":id", h.GetModule)
-		mods.PUT(":id", h.UpdateModule)
-		mods.DELETE(":id", h.DeleteModule)
+		mods.GET("", middleware.PermissionMiddleware("role:read"), h.ListModules)
+		mods.GET(":id", middleware.PermissionMiddleware("role:read"), h.GetModule)
+		mods.POST("", middleware.PermissionMiddleware("system:config"), h.CreateModule)
+		mods.PUT(":id", middleware.PermissionMiddleware("system:config"), h.UpdateModule)
+		mods.DELETE(":id", middleware.PermissionMiddleware("system:config"), h.DeleteModule)
 	}
 }

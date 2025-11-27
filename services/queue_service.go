@@ -26,7 +26,6 @@ func NewQueueService(userService *UserService, workerCount int) *QueueService {
 }
 
 type CreateUserJobData struct {
-	// ❌ FIX: TenantDB pointer hata diya, sirf ID rakhi hai
 	TenantID    uint               `json:"tenant_id"`
 	Request     *CreateUserRequest `json:"request"`
 	CurrentUser *models.User       `json:"current_user"`
@@ -61,8 +60,6 @@ func (qs *QueueService) worker(workerID int) {
 			continue
 		}
 
-		// ✅ FIX: Tenant ID se DB Connection fresh fetch karo
-		// Hamein Master DB chahiye taaki Tenant ki info le saken
 		masterDB := config.GetMasterDB()
 		tenantRepo := repositories.NewTenantRepository(masterDB)
 
@@ -80,7 +77,6 @@ func (qs *QueueService) worker(workerID int) {
 			continue
 		}
 
-		// Process the user creation using the fresh DB connection
 		user, err := qs.userService.CreateUser(
 			tenantDB,
 			jobData.TenantID,
@@ -104,7 +100,6 @@ func (qs *QueueService) worker(workerID int) {
 	}
 }
 
-// ✅ FIX: Function signature update (DB parameter removed)
 func (qs *QueueService) EnqueueUserCreation(tenantID uint, req *CreateUserRequest, currentUser *models.User) (string, error) {
 	jobData := CreateUserJobData{
 		TenantID:    tenantID,

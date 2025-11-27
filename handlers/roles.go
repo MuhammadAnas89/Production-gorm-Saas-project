@@ -30,7 +30,6 @@ type CreateRoleRequest struct {
 func (h *RoleHandler) CreateRole(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 
-	// ✅ FIX: User details fetch karo taaki TenantID mil sake
 	userInterface, _ := c.Get("user")
 	currentUser := userInterface.(*models.User)
 
@@ -44,7 +43,7 @@ func (h *RoleHandler) CreateRole(c *gin.Context) {
 		Name:         req.Name,
 		Description:  req.Description,
 		IsSystemRole: req.IsSystem,
-		// ✅ FIX: TenantID manually set karo (Shared DB ke liye lazmi hai)
+
 		TenantID: currentUser.TenantID,
 	}
 
@@ -68,7 +67,6 @@ func (h *RoleHandler) GetRole(c *gin.Context) {
 	idStr := c.Param("id")
 	id64, _ := strconv.ParseUint(idStr, 10, 32)
 
-	// Note: Middleware ka 'Where' clause yahan automatically apply hoga
 	role, err := h.svc.GetByID(tenantDB, uint(id64))
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusNotFound, "role not found", err)
@@ -80,7 +78,6 @@ func (h *RoleHandler) GetRole(c *gin.Context) {
 func (h *RoleHandler) ListRoles(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 
-	// Note: Middleware ka 'Where' clause yahan automatically apply hoga
 	roles, err := h.svc.List(tenantDB)
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to list roles", err)

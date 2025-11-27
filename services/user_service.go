@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"go-multi-tenant/config"
 	"go-multi-tenant/models"
 	"go-multi-tenant/repositories"
 	"go-multi-tenant/utils"
@@ -26,18 +27,15 @@ type CreateUserRequest struct {
 	RoleID   uint   `json:"role_id"`
 }
 
-// ✅ Email validation helper
 func isValidEmail(email string) bool {
 	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 	return emailRegex.MatchString(email)
 }
 
-// ✅ Password strength validation helper
 func isStrongPassword(password string) (bool, string) {
 	if len(password) < 8 {
 		return false, "password must be at least 8 characters long"
 	}
-
 	hasUpper := regexp.MustCompile(`[A-Z]`).MatchString(password)
 	hasLower := regexp.MustCompile(`[a-z]`).MatchString(password)
 	hasNumber := regexp.MustCompile(`[0-9]`).MatchString(password)
@@ -46,46 +44,39 @@ func isStrongPassword(password string) (bool, string) {
 	if !hasUpper || !hasLower || !hasNumber || !hasSpecial {
 		return false, "password must contain uppercase, lowercase, number, and special character"
 	}
-
 	return true, ""
 }
 
+func clearUserCache(tenantID uint) {
+	cacheKey := fmt.Sprintf("tenant:%d:users:list", tenantID)
+	_ = config.DeleteCache(cacheKey)
+}
+
 func (s *UserService) CreateUser(tenantDB *gorm.DB, tenantID uint, req *CreateUserRequest, currentUser *models.User) (*models.User, error) {
-	// ✅ Permission check
 	if !currentUser.HasPermission("user:create") {
 		return nil, errors.New("insufficient permissions")
 	}
-
-	// ✅ FIX: Email validation
 	if !isValidEmail(req.Email) {
 		return nil, errors.New("invalid email format")
 	}
-
-	// ✅ FIX: Password strength validation
 	if strong, msg := isStrongPassword(req.Password); !strong {
 		return nil, errors.New(msg)
 	}
-
-	// ✅ Username validation
 	if len(req.Username) < 3 {
 		return nil, errors.New("username must be at least 3 characters long")
 	}
 
 	userRepo := repositories.NewUserRepository(tenantDB)
 
-	// ✅ Check for existing username
 	existingUser, err := userRepo.GetByUsernameAndTenant(req.Username, tenantID)
 	if err == nil && existingUser != nil {
 		return nil, errors.New("username already exists in this tenant")
 	}
-
-	// ✅ Check for existing email
 	existingEmailUser, err := userRepo.GetByEmail(req.Email, tenantID)
 	if err == nil && existingEmailUser != nil {
 		return nil, errors.New("email already exists in this tenant")
 	}
 
-	// ✅ FIX: Validate role exists and preload permissions
 	var role models.Role
 	if err := tenantDB.Preload("Permissions").First(&role, req.RoleID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -94,13 +85,11 @@ func (s *UserService) CreateUser(tenantDB *gorm.DB, tenantID uint, req *CreateUs
 		return nil, fmt.Errorf("failed to fetch role: %w", err)
 	}
 
-	// ✅ Hash password
 	hashedPassword, err := utils.HashPassword(req.Password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	// ✅ Create user
 	user := &models.User{
 		TenantID: tenantID,
 		Username: req.Username,
@@ -112,60 +101,29 @@ func (s *UserService) CreateUser(tenantDB *gorm.DB, tenantID uint, req *CreateUs
 
 	err = userRepo.Create(user)
 	if err != nil {
-		// ✅ Handle duplicate entry errors
 		if strings.Contains(err.Error(), "Duplicate entry") {
-			if strings.Contains(err.Error(), "idx_username_tenant") {
-				return nil, errors.New("username already exists in this tenant (database constraint)")
-			}
-			if strings.Contains(err.Error(), "idx_email_tenant") {
-				return nil, errors.New("email already exists in this tenant (database constraint)")
-			}
-			if strings.Contains(err.Error(), "users.api_key") {
-				user.APIKey = ""
-				err = userRepo.Create(user)
-				if err != nil {
-					return nil, fmt.Errorf("failed to create user: %w", err)
-				}
-			} else {
-				return nil, fmt.Errorf("duplicate entry error: %w", err)
-			}
-		} else {
-			return nil, fmt.Errorf("failed to create user: %w", err)
+			return nil, errors.New("user already exists (duplicate entry)")
 		}
+		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	// ✅ Assign role to user
 	if err := tenantDB.Model(user).Association("Roles").Append(&role); err != nil {
 		return nil, fmt.Errorf("failed to assign role to user: %w", err)
 	}
 
-	// ✅ Load user with roles
+	clearUserCache(tenantID)
+
 	var userWithRoles models.User
 	if err := tenantDB.Preload("Roles").First(&userWithRoles, user.ID).Error; err != nil {
 		return nil, fmt.Errorf("failed to load user with roles: %w", err)
 	}
 
-	// ✅ Return user response (without password)
-	userResponse := &models.User{
-		ID:        userWithRoles.ID,
-		TenantID:  userWithRoles.TenantID,
-		Username:  userWithRoles.Username,
-		Email:     userWithRoles.Email,
-		Roles:     userWithRoles.Roles,
-		IsActive:  userWithRoles.IsActive,
-		CreatedAt: userWithRoles.CreatedAt,
-	}
-
-	return userResponse, nil
+	return &userWithRoles, nil
 }
 
 func (s *UserService) GetUser(tenantDB *gorm.DB, userID uint, currentUser *models.User) (*models.User, error) {
 	userRepo := repositories.NewUserRepository(tenantDB)
 
-	// ✅ Tenant User can only view their own profile
-	if !currentUser.HasRole("Tenant Admin") && currentUser.ID != userID {
-		return nil, errors.New("you can only view your own profile")
-	}
 	if currentUser.HasRole("Tenant User") {
 		if currentUser.ID != userID {
 			return nil, errors.New("access denied - can only view own profile")
@@ -180,61 +138,41 @@ func (s *UserService) GetUser(tenantDB *gorm.DB, userID uint, currentUser *model
 		return nil, fmt.Errorf("failed to fetch user: %w", err)
 	}
 
-	// ✅ Ensure user belongs to same tenant
 	if user.TenantID != currentUser.TenantID {
 		return nil, errors.New("access denied")
 	}
 
-	// ✅ Load user with roles
 	var userWithRoles models.User
 	if err := tenantDB.Preload("Roles").First(&userWithRoles, userID).Error; err != nil {
 		return nil, fmt.Errorf("failed to load user roles: %w", err)
 	}
 
-	// ✅ Return user response (without password)
-	userResponse := &models.User{
-		ID:        userWithRoles.ID,
-		TenantID:  userWithRoles.TenantID,
-		Username:  userWithRoles.Username,
-		Email:     userWithRoles.Email,
-		Roles:     userWithRoles.Roles,
-		IsActive:  userWithRoles.IsActive,
-		CreatedAt: userWithRoles.CreatedAt,
-	}
-
-	return userResponse, nil
+	return &userWithRoles, nil
 }
 
 func (s *UserService) UpdateUser(tenantDB *gorm.DB, userID uint, updateData map[string]interface{}, currentUser *models.User) (*models.User, error) {
 	userRepo := repositories.NewUserRepository(tenantDB)
 
-	// ✅ Permission check
 	if !currentUser.HasPermission("user:update") {
 		return nil, errors.New("insufficient permissions")
 	}
 
 	user, err := userRepo.GetByID(userID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("user not found")
-		}
 		return nil, fmt.Errorf("failed to fetch user: %w", err)
 	}
 
-	// ✅ Ensure user belongs to same tenant
 	if user.TenantID != currentUser.TenantID {
 		return nil, errors.New("access denied")
 	}
 
-	// ✅ Validate username uniqueness
 	if username, exists := updateData["username"]; exists {
 		existingUser, err := userRepo.GetByUsernameAndTenant(username.(string), currentUser.TenantID)
 		if err == nil && existingUser != nil && existingUser.ID != userID {
 			return nil, errors.New("username already exists in this tenant")
 		}
+		user.Username = username.(string)
 	}
-
-	// ✅ Validate email uniqueness and format
 	if email, exists := updateData["email"]; exists {
 		emailStr := email.(string)
 		if !isValidEmail(emailStr) {
@@ -244,41 +182,35 @@ func (s *UserService) UpdateUser(tenantDB *gorm.DB, userID uint, updateData map[
 		if err == nil && existingEmailUser != nil && existingEmailUser.ID != userID {
 			return nil, errors.New("email already exists in this tenant")
 		}
-	}
-
-	// ✅ Update user fields
-	if username, exists := updateData["username"]; exists {
-		user.Username = username.(string)
-	}
-	if email, exists := updateData["email"]; exists {
-		user.Email = email.(string)
+		user.Email = emailStr
 	}
 	if isActive, exists := updateData["is_active"]; exists {
 		user.IsActive = isActive.(bool)
 	}
 
-	// ✅ Update role if provided
 	if roleID, exists := updateData["role_id"]; exists {
 		var role models.Role
-		if err := tenantDB.Preload("Permissions").First(&role, roleID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, errors.New("role not found")
-			}
-			return nil, fmt.Errorf("failed to fetch role: %w", err)
+		var rID uint
+		switch v := roleID.(type) {
+		case float64:
+			rID = uint(v)
+		case uint:
+			rID = v
+		case int:
+			rID = uint(v)
 		}
 
-		if err := tenantDB.Model(user).Association("Roles").Clear(); err != nil {
-			return nil, fmt.Errorf("failed to clear existing roles: %w", err)
-		}
-		if err := tenantDB.Model(user).Association("Roles").Append(&role); err != nil {
-			return nil, fmt.Errorf("failed to assign new role: %w", err)
+		if err := tenantDB.First(&role, rID).Error; err == nil {
+			tenantDB.Model(user).Association("Roles").Clear()
+			tenantDB.Model(user).Association("Roles").Append(&role)
 		}
 	}
 
-	// ✅ Save user updates
 	if err := userRepo.Update(user); err != nil {
 		return nil, fmt.Errorf("failed to update user: %w", err)
 	}
+
+	clearUserCache(currentUser.TenantID)
 
 	return s.GetUser(tenantDB, userID, currentUser)
 }
@@ -286,25 +218,19 @@ func (s *UserService) UpdateUser(tenantDB *gorm.DB, userID uint, updateData map[
 func (s *UserService) DeleteUser(tenantDB *gorm.DB, userID uint, currentUser *models.User) error {
 	userRepo := repositories.NewUserRepository(tenantDB)
 
-	// ✅ Permission check
 	if !currentUser.HasPermission("user:delete") {
 		return errors.New("insufficient permissions")
 	}
 
-	// ✅ Prevent self-deletion
 	if currentUser.ID == userID {
 		return errors.New("cannot delete your own account")
 	}
 
 	user, err := userRepo.GetByID(userID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("user not found")
-		}
 		return fmt.Errorf("failed to fetch user: %w", err)
 	}
 
-	// ✅ Ensure user belongs to same tenant
 	if user.TenantID != currentUser.TenantID {
 		return errors.New("access denied")
 	}
@@ -313,32 +239,41 @@ func (s *UserService) DeleteUser(tenantDB *gorm.DB, userID uint, currentUser *mo
 		return fmt.Errorf("failed to delete user: %w", err)
 	}
 
+	clearUserCache(currentUser.TenantID)
+
 	return nil
 }
 
 func (s *UserService) ListUsers(tenantDB *gorm.DB, currentUser *models.User) ([]models.User, error) {
-	userRepo := repositories.NewUserRepository(tenantDB)
-
-	// ✅ Permission check
-	if !currentUser.HasPermission("user:read") {
+	if !currentUser.HasPermission("user:list") && !currentUser.HasPermission("user:read") {
 		return nil, errors.New("insufficient permissions")
 	}
 
-	_, err := userRepo.ListByTenant(currentUser.TenantID)
+	cacheKey := fmt.Sprintf("tenant:%d:users:list", currentUser.TenantID)
+	var cachedUsers []models.User
+
+	err := config.GetCacheStruct(cacheKey, &cachedUsers)
+	if err == nil {
+		fmt.Println("🔥 REDIS CACHE HIT! Serving from Memory")
+		return cachedUsers, nil
+	}
+
+	fmt.Println("🐢 REDIS MISS! Fetching from DB...")
+
+	userRepo := repositories.NewUserRepository(tenantDB)
+	_, err = userRepo.ListByTenant(currentUser.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch users: %w", err)
 	}
 
-	// ✅ Load users with roles
 	var usersWithRoles []models.User
 	if err := tenantDB.Preload("Roles").Where("tenant_id = ?", currentUser.TenantID).Find(&usersWithRoles).Error; err != nil {
 		return nil, fmt.Errorf("failed to load users with roles: %w", err)
 	}
 
-	// ✅ Return user responses (without passwords)
 	var userResponses []models.User
 	for _, user := range usersWithRoles {
-		userResponse := models.User{
+		userResponses = append(userResponses, models.User{
 			ID:        user.ID,
 			TenantID:  user.TenantID,
 			Username:  user.Username,
@@ -346,9 +281,10 @@ func (s *UserService) ListUsers(tenantDB *gorm.DB, currentUser *models.User) ([]
 			Roles:     user.Roles,
 			IsActive:  user.IsActive,
 			CreatedAt: user.CreatedAt,
-		}
-		userResponses = append(userResponses, userResponse)
+		})
 	}
+
+	_ = config.SetCacheStruct(cacheKey, userResponses, 0)
 
 	return userResponses, nil
 }
@@ -364,34 +300,21 @@ func (s *UserService) GetSelf(tenantDB *gorm.DB, currentUser *models.User) (*mod
 		return nil, fmt.Errorf("failed to fetch user: %w", err)
 	}
 
-	// ✅ Load user with roles and permissions
 	var userWithRoles models.User
 	if err := tenantDB.Preload("Roles.Permissions").First(&userWithRoles, currentUser.ID).Error; err != nil {
 		return nil, fmt.Errorf("failed to load user data: %w", err)
 	}
 
-	// ✅ Return user response (without password)
-	userResponse := &models.User{
-		ID:        userWithRoles.ID,
-		TenantID:  userWithRoles.TenantID,
-		Username:  userWithRoles.Username,
-		Email:     userWithRoles.Email,
-		Roles:     userWithRoles.Roles,
-		IsActive:  userWithRoles.IsActive,
-		CreatedAt: userWithRoles.CreatedAt,
-	}
-
-	return userResponse, nil
+	return &userWithRoles, nil
 }
 
 func (s *UserService) GetAvailableRoles(tenantDB *gorm.DB, currentUser *models.User) ([]models.Role, error) {
-	// ✅ Permission check
 	if !currentUser.HasPermission("user:create") {
 		return nil, errors.New("insufficient permissions")
 	}
 
 	var roles []models.Role
-	if err := tenantDB.Preload("Permissions").Find(&roles).Error; err != nil {
+	if err := tenantDB.Preload("Permissions").Where("tenant_id = ?", currentUser.TenantID).Find(&roles).Error; err != nil {
 		return nil, fmt.Errorf("failed to fetch roles: %w", err)
 	}
 
@@ -399,7 +322,6 @@ func (s *UserService) GetAvailableRoles(tenantDB *gorm.DB, currentUser *models.U
 }
 
 func (s *UserService) AssignRole(tenantDB *gorm.DB, userID uint, roleID uint, currentUser *models.User) error {
-	// ✅ Permission check
 	if !currentUser.HasPermission("user:update") {
 		return errors.New("insufficient permissions")
 	}
@@ -407,48 +329,34 @@ func (s *UserService) AssignRole(tenantDB *gorm.DB, userID uint, roleID uint, cu
 	userRepo := repositories.NewUserRepository(tenantDB)
 	user, err := userRepo.GetByID(userID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("user not found")
-		}
 		return fmt.Errorf("failed to fetch user: %w", err)
 	}
 
-	// ✅ Ensure user belongs to same tenant
 	if user.TenantID != currentUser.TenantID {
-		return errors.New("access denied - user from different tenant")
+		return errors.New("access denied")
 	}
 
-	// ✅ Verify role exists
 	var role models.Role
 	if err := tenantDB.Preload("Permissions").First(&role, roleID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("role not found")
-		}
-		return fmt.Errorf("failed to fetch role: %w", err)
+		return fmt.Errorf("role not found: %w", err)
 	}
 
-	// ✅ Check if role is already assigned
-	var existingRoles []models.Role
-	if err := tenantDB.Model(user).Association("Roles").Find(&existingRoles); err != nil {
-		return fmt.Errorf("failed to check existing roles: %w", err)
+	var count int64
+	tenantDB.Table("user_roles").Where("user_id = ? AND role_id = ?", user.ID, role.ID).Count(&count)
+	if count > 0 {
+		return errors.New("role already assigned")
 	}
 
-	for _, r := range existingRoles {
-		if r.ID == roleID {
-			return errors.New("role already assigned to user")
-		}
-	}
-
-	// ✅ Assign role
 	if err := tenantDB.Model(user).Association("Roles").Append(&role); err != nil {
-		return fmt.Errorf("failed to assign role: %w", err)
+		return err
 	}
+
+	clearUserCache(currentUser.TenantID)
 
 	return nil
 }
 
 func (s *UserService) RemoveRole(tenantDB *gorm.DB, userID uint, roleID uint, currentUser *models.User) error {
-	// ✅ Permission check
 	if !currentUser.HasPermission("user:update") {
 		return errors.New("insufficient permissions")
 	}
@@ -456,30 +364,23 @@ func (s *UserService) RemoveRole(tenantDB *gorm.DB, userID uint, roleID uint, cu
 	userRepo := repositories.NewUserRepository(tenantDB)
 	user, err := userRepo.GetByID(userID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("user not found")
-		}
 		return fmt.Errorf("failed to fetch user: %w", err)
 	}
 
-	// ✅ Ensure user belongs to same tenant
 	if user.TenantID != currentUser.TenantID {
-		return errors.New("access denied - user from different tenant")
+		return errors.New("access denied")
 	}
 
-	// ✅ Verify role exists
 	var role models.Role
 	if err := tenantDB.First(&role, roleID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("role not found")
-		}
-		return fmt.Errorf("failed to fetch role: %w", err)
+		return fmt.Errorf("role not found")
 	}
 
-	// ✅ Remove role
 	if err := tenantDB.Model(user).Association("Roles").Delete(&role); err != nil {
-		return fmt.Errorf("failed to remove role: %w", err)
+		return err
 	}
+
+	clearUserCache(currentUser.TenantID)
 
 	return nil
 }

@@ -8,14 +8,12 @@ import (
 )
 
 type ModuleService struct {
-	// ❌ FIX: Repo removed
 }
 
 func NewModuleService() *ModuleService {
 	return &ModuleService{}
 }
 
-// ✅ FIX: Methods now accept DB connection
 func (s *ModuleService) Create(db *gorm.DB, m *models.Module) error {
 	return repositories.NewModuleRepository(db).Create(m)
 }

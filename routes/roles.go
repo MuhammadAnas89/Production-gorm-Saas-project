@@ -11,14 +11,14 @@ import (
 func RegisterRoleRoutes(rg *gin.RouterGroup, svc *services.RoleService) {
 	h := handlers.NewRoleHandler(svc)
 	roles := rg.Group("/roles")
-	roles.Use(middleware.PermissionMiddleware("admin:full"))
+
 	{
-		roles.POST("", h.CreateRole)
-		roles.GET("", h.ListRoles)
-		roles.GET(":id", h.GetRole)
-		roles.PUT(":id", h.UpdateRole)
-		roles.DELETE(":id", h.DeleteRole)
-		roles.POST(":id/permissions", h.AttachPermissions)
-		roles.DELETE(":id/permissions/:pid", h.DetachPermission)
+		roles.POST("", middleware.PermissionMiddleware("role:create"), h.CreateRole)
+		roles.GET("", middleware.PermissionMiddleware("role:read"), h.ListRoles)
+		roles.GET(":id", middleware.PermissionMiddleware("role:read"), h.GetRole)
+		roles.PUT(":id", middleware.PermissionMiddleware("role:update"), h.UpdateRole)
+		roles.DELETE(":id", middleware.PermissionMiddleware("role:delete"), h.DeleteRole)
+		roles.POST(":id/permissions", middleware.PermissionMiddleware("role:update"), h.AttachPermissions)
+		roles.DELETE(":id/permissions/:pid", middleware.PermissionMiddleware("role:update"), h.DetachPermission)
 	}
 }

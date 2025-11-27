@@ -34,7 +34,7 @@ type CreateTenantResponse struct {
 }
 
 func (s *TenantService) CreateTenant(req *CreateTenantRequest) (*CreateTenantResponse, error) {
-	// 1. Database Name Determine karo
+
 	var dbName string
 	if req.DatabaseType == models.DedicatedDB {
 		dbName = fmt.Sprintf("tenant_%s_db", req.Name)
@@ -49,12 +49,10 @@ func (s *TenantService) CreateTenant(req *CreateTenantRequest) (*CreateTenantRes
 		IsActive:     true,
 	}
 
-	// 2. Master DB mein Tenant Record Create karo
 	if err := s.tenantRepo.Create(tenant); err != nil {
 		return nil, err
 	}
 
-	// 3. Actual Database Create karo (Physical DB creation)
 	if tenant.DatabaseType == models.DedicatedDB {
 		if err := config.TenantManager.CreateDedicatedDatabase(tenant); err != nil {
 			s.tenantRepo.Delete(tenant.ID) // Rollback
@@ -67,9 +65,6 @@ func (s *TenantService) CreateTenant(req *CreateTenantRequest) (*CreateTenantRes
 		}
 	}
 
-	// 4. Tenant DB Connection lo
-	// Note: Is call ke andar 'SyncPermissions' automatically chalega (config package logic)
-	// Jisse Master permissions Tenant DB mein copy ho jayengi.
 	tenantDB, err := config.TenantManager.GetTenantDB(tenant)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to new tenant db: %w", err)
@@ -80,26 +75,19 @@ func (s *TenantService) CreateTenant(req *CreateTenantRequest) (*CreateTenantRes
 		Name:         "Tenant Admin",
 		Description:  "Administrator for this workspace",
 		IsSystemRole: true,
-		TenantID:     tenant.ID, // Shared DB ke liye zaroori hai
+		TenantID:     tenant.ID,
 	}
 
-	// Check karo agar pehle se hai, warna create karo
 	if err := tenantDB.Where("name = ?", "Tenant Admin").FirstOrCreate(&adminRole).Error; err != nil {
 		return nil, fmt.Errorf("failed to create admin role: %w", err)
 	}
 
-	// 6. ✅ CRITICAL FIX: Assign ONLY Safe Permissions
-	// Hum sirf 'user' aur 'role' category ki permissions assign karenge.
-	// 'system', 'tenant', 'admin' categories (jo Super Admin ki hain) unhein skip kar denge.
-
 	var allowedPerms []models.Permission
 
-	// Query: Select * FROM permissions WHERE category IN ('user', 'role')
 	if err := tenantDB.Where("category IN ?", []string{"user", "role"}).Find(&allowedPerms).Error; err == nil {
 		tenantDB.Model(&adminRole).Association("Permissions").Replace(&allowedPerms)
 	}
 
-	// 7. Tenant Admin User Create karo
 	hashedPassword, _ := utils.HashPassword(req.AdminPassword)
 	adminUser := &models.User{
 		TenantID: tenant.ID,
@@ -113,7 +101,6 @@ func (s *TenantService) CreateTenant(req *CreateTenantRequest) (*CreateTenantRes
 		return nil, fmt.Errorf("failed to create admin user: %w", err)
 	}
 
-	// 8. Role User ko Assign karo
 	if err := tenantDB.Model(adminUser).Association("Roles").Append(&adminRole); err != nil {
 		return nil, fmt.Errorf("failed to assign role to user: %w", err)
 	}

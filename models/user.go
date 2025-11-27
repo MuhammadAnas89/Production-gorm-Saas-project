@@ -30,7 +30,6 @@ type UserResponse struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// Check if user has permission
 func (u *User) HasPermission(permissionName string) bool {
 	for _, role := range u.Roles {
 		for _, perm := range role.Permissions {

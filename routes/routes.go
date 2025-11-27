@@ -21,7 +21,7 @@ func SetupRoutes(router *gin.Engine) {
 	userService := services.NewUserService()
 	tenantService := services.NewTenantService(tenantRepo, userRepo)
 
-	// ✅ Services init (Empty constructor, no repo passed)
+	//Services init (Empty constructor, no repo passed)
 	moduleService := services.NewModuleService()
 	permissionService := services.NewPermissionService()
 	roleService := services.NewRoleService()
