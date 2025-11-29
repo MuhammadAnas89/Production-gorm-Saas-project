@@ -9,12 +9,11 @@ import (
 type UserRepository interface {
 	Create(user *models.User) error
 	GetByID(id uint) (*models.User, error)
-	GetByUsernameAndTenant(username string, tenantID uint) (*models.User, error)
-	GetByEmail(email string, tenantID uint) (*models.User, error)
-	GetByAPIKey(apiKey string) (*models.User, error)
+	GetByEmail(email string) (*models.User, error)
+	GetByUsername(username string) (*models.User, error) // ✅ Added
 	Update(user *models.User) error
 	Delete(id uint) error
-	ListByTenant(tenantID uint) ([]models.User, error)
+	List(offset, limit int) ([]models.User, int64, error)
 }
 
 type userRepository struct {
@@ -26,33 +25,25 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 }
 
 func (r *userRepository) Create(user *models.User) error {
-
-	user.APIKey = ""
-	user.APIKeyExpiry = nil
 	return r.db.Create(user).Error
-}
-
-func (r *userRepository) GetByAPIKey(apiKey string) (*models.User, error) {
-	var user models.User
-	err := r.db.Where("api_key = ? AND api_key != ''", apiKey).First(&user).Error
-	return &user, err
 }
 
 func (r *userRepository) GetByID(id uint) (*models.User, error) {
 	var user models.User
-	err := r.db.First(&user, id).Error
+	err := r.db.Preload("Roles.Permissions").First(&user, id).Error
 	return &user, err
 }
 
-func (r *userRepository) GetByUsernameAndTenant(username string, tenantID uint) (*models.User, error) {
+func (r *userRepository) GetByEmail(email string) (*models.User, error) {
 	var user models.User
-	err := r.db.Where("username = ? AND tenant_id = ?", username, tenantID).First(&user).Error
+	err := r.db.Preload("Roles").Where("email = ?", email).First(&user).Error
 	return &user, err
 }
 
-func (r *userRepository) GetByEmail(email string, tenantID uint) (*models.User, error) {
+// ✅ Added this method
+func (r *userRepository) GetByUsername(username string) (*models.User, error) {
 	var user models.User
-	err := r.db.Where("email = ? AND tenant_id = ?", email, tenantID).First(&user).Error
+	err := r.db.Where("username = ?", username).First(&user).Error
 	return &user, err
 }
 
@@ -64,8 +55,18 @@ func (r *userRepository) Delete(id uint) error {
 	return r.db.Delete(&models.User{}, id).Error
 }
 
-func (r *userRepository) ListByTenant(tenantID uint) ([]models.User, error) {
+func (r *userRepository) List(offset, limit int) ([]models.User, int64, error) {
 	var users []models.User
-	err := r.db.Where("tenant_id = ?", tenantID).Find(&users).Error
-	return users, err
+	var count int64
+
+	r.db.Model(&models.User{}).Count(&count)
+
+	// Agar limit -1 hai to sab le aao
+	query := r.db.Preload("Roles")
+	if limit > 0 {
+		query = query.Offset(offset).Limit(limit)
+	}
+
+	err := query.Find(&users).Error
+	return users, count, err
 }

@@ -1,85 +1,72 @@
 package handlers
 
 import (
+	"go-multi-tenant/config"
+	"go-multi-tenant/models"
+	"go-multi-tenant/services"
 	"net/http"
 	"strconv"
 
-	"go-multi-tenant/models"
-	"go-multi-tenant/services"
-	"go-multi-tenant/utils"
-
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 type ModuleHandler struct {
-	svc *services.ModuleService
+	modService *services.ModuleService
 }
 
-func NewModuleHandler(svc *services.ModuleService) *ModuleHandler {
-	return &ModuleHandler{svc: svc}
+func NewModuleHandler(modService *services.ModuleService) *ModuleHandler {
+	return &ModuleHandler{modService: modService}
 }
 
-func (h *ModuleHandler) CreateModule(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	var m models.Module
-	if err := c.ShouldBindJSON(&m); err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "invalid body", err)
+// 1. Create Module
+func (h *ModuleHandler) Create(c *gin.Context) {
+	var module models.Module
+	if err := c.ShouldBindJSON(&module); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.svc.Create(tenantDB, &m); err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to create module", err)
+
+	// Master DB pass kar rahe hain
+	if err := h.modService.Create(config.MasterDB, &module); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	utils.SuccessResponse(c, http.StatusCreated, "module created", m)
+
+	c.JSON(http.StatusCreated, gin.H{"message": "Module created", "data": module})
 }
 
-func (h *ModuleHandler) GetModule(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	idStr := c.Param("id")
-	id64, _ := strconv.ParseUint(idStr, 10, 32)
-	m, err := h.svc.GetByID(tenantDB, uint(id64))
+// 2. List Modules
+func (h *ModuleHandler) List(c *gin.Context) {
+	modules, err := h.modService.List(config.MasterDB)
 	if err != nil {
-		utils.ErrorResponse(c, http.StatusNotFound, "module not found", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	utils.SuccessResponse(c, http.StatusOK, "module retrieved", m)
+	c.JSON(http.StatusOK, gin.H{"data": modules})
 }
 
-func (h *ModuleHandler) ListModules(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	mods, err := h.svc.List(tenantDB)
-	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to list modules", err)
+// 3. Update Module
+func (h *ModuleHandler) Update(c *gin.Context) {
+	var module models.Module
+	if err := c.ShouldBindJSON(&module); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	utils.SuccessResponse(c, http.StatusOK, "modules list", mods)
+	// ID from URL should match or be handled logic wise, assuming ID is in body or handled by repo update logic
+
+	if err := h.modService.Update(config.MasterDB, &module); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Module updated"})
 }
 
-func (h *ModuleHandler) UpdateModule(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	idStr := c.Param("id")
-	id64, _ := strconv.ParseUint(idStr, 10, 32)
-	var m models.Module
-	if err := c.ShouldBindJSON(&m); err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "invalid body", err)
+// 4. Delete Module
+func (h *ModuleHandler) Delete(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	if err := h.modService.Delete(config.MasterDB, uint(id)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	m.ID = uint(id64)
-	if err := h.svc.Update(tenantDB, &m); err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to update module", err)
-		return
-	}
-	utils.SuccessResponse(c, http.StatusOK, "module updated", m)
-}
-
-func (h *ModuleHandler) DeleteModule(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	idStr := c.Param("id")
-	id64, _ := strconv.ParseUint(idStr, 10, 32)
-	if err := h.svc.Delete(tenantDB, uint(id64)); err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to delete module", err)
-		return
-	}
-	utils.SuccessResponse(c, http.StatusOK, "module deleted", nil)
+	c.JSON(http.StatusOK, gin.H{"message": "Module deleted"})
 }

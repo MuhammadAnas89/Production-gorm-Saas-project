@@ -4,83 +4,66 @@ import (
 	"fmt"
 	"go-multi-tenant/config"
 	"go-multi-tenant/models"
-	"go-multi-tenant/repositories"
 	"go-multi-tenant/services"
-	"go-multi-tenant/utils"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
-func TenantDBMiddleware(authService *services.AuthService) gin.HandlerFunc {
+func TenantDBMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if _, exists := c.Get("tenantDB"); exists {
-			c.Next()
-			return
-		}
-
-		apiKey := c.GetHeader("X-API-Key")
-		if apiKey == "" {
-			c.Next()
-			return
-		}
-
-		userInterface, exists := c.Get("user")
+		// 1. Get TenantID from previous middleware (AuthMiddleware)
+		tenantIDInterface, exists := c.Get("tenantID")
 		if !exists {
-			utils.ErrorResponse(c, http.StatusUnauthorized, "User not found in context", nil)
-			c.Abort()
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Tenant ID not found in context"})
 			return
 		}
+		tenantID := tenantIDInterface.(uint)
 
-		user := userInterface.(*models.User)
-
-		if user.HasRole("Super Administrator") {
-			c.Set("tenantDB", config.MasterDB)
-			c.Next()
-			return
-		}
-
+		// 2. Fetch Tenant Info (Redis First -> Then Master DB)
 		var tenant models.Tenant
-		cacheKey := fmt.Sprintf("tenant_info:%d", user.TenantID)
+		cacheKey := fmt.Sprintf("tenant_info:%d", tenantID)
 
-		err := config.GetCacheStruct(cacheKey, &tenant)
-
-		if err == nil {
-
-		} else {
-
-			tenantRepo := repositories.NewTenantRepository(config.MasterDB)
-			dbTenant, dbErr := tenantRepo.GetByID(user.TenantID)
-			if dbErr != nil {
-				utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to get tenant information", dbErr)
-				c.Abort()
+		// Try Cache
+		cacheService := services.NewCacheService()
+		err := cacheService.Get(cacheKey, &tenant)
+		if err != nil {
+			// Cache Miss: Fetch from Master DB
+			// Preload Plan taaki limits bhi cache ho jayen
+			if dbErr := config.MasterDB.Preload("Plan").First(&tenant, tenantID).Error; dbErr != nil {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Tenant not found or inactive"})
 				return
 			}
-			tenant = *dbTenant
-
-			_ = config.SetCacheStruct(cacheKey, tenant, 30*time.Minute)
+			// Cache Set (30 Minutes Expiry)
+			cacheService := services.NewCacheService()
+			_ = cacheService.Set(cacheKey, tenant, 30*time.Minute)
 		}
 
 		if !tenant.IsActive {
-			utils.ErrorResponse(c, http.StatusForbidden, "Tenant account is suspended", nil)
-			c.Abort()
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Tenant account is suspended"})
 			return
 		}
 
-		rawDB, err := config.TenantManager.GetTenantDB(&tenant)
+		// 3. Get Tenant Database Connection
+		tenantDB, err := config.TenantManager.GetTenantDB(&tenant)
 		if err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to connect to tenant database", err)
-			c.Abort()
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to connect to tenant database"})
 			return
 		}
 
+		// Shared DB Scope Logic
 		if tenant.DatabaseType == models.SharedDB {
-			scopedDB := rawDB.Where("tenant_id = ?", tenant.ID)
+			// Agar shared DB hai, to har query mein `WHERE tenant_id = ?` lagana zaroori hai
+			// GORM ka scoped session use karenge
+			scopedDB := tenantDB.Where("tenant_id = ?", tenant.ID)
 			c.Set("tenantDB", scopedDB)
 		} else {
-			c.Set("tenantDB", rawDB)
+			c.Set("tenantDB", tenantDB)
 		}
+
+		// Tenant Info context mein rakho (Limits check karne ke liye kaam ayegi)
+		c.Set("tenant", &tenant)
 
 		c.Next()
 	}

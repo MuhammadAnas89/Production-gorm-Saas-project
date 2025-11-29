@@ -1,149 +1,86 @@
 package handlers
 
 import (
-	"net/http"
-	"strconv"
-
 	"go-multi-tenant/models"
 	"go-multi-tenant/services"
-	"go-multi-tenant/utils"
+	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 type RoleHandler struct {
-	svc *services.RoleService
+	roleService *services.RoleService
 }
 
-func NewRoleHandler(svc *services.RoleService) *RoleHandler {
-	return &RoleHandler{svc: svc}
+func NewRoleHandler(roleService *services.RoleService) *RoleHandler {
+	return &RoleHandler{roleService: roleService}
 }
 
-type CreateRoleRequest struct {
-	Name          string `json:"name" binding:"required"`
-	Description   string `json:"description"`
-	IsSystem      bool   `json:"is_system_role"`
-	PermissionIDs []uint `json:"permission_ids,omitempty"`
-}
-
+// 1. Create Role
 func (h *RoleHandler) CreateRole(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
+	tenantID := c.MustGet("tenantID").(uint)
 
-	userInterface, _ := c.Get("user")
-	currentUser := userInterface.(*models.User)
-
-	var req CreateRoleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "invalid body", err)
+	var role models.Role
+	if err := c.ShouldBindJSON(&role); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	role := &models.Role{
-		Name:         req.Name,
-		Description:  req.Description,
-		IsSystemRole: req.IsSystem,
-
-		TenantID: currentUser.TenantID,
-	}
-
-	if err := h.svc.Create(tenantDB, role); err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to create role", err)
+	if err := h.roleService.CreateRole(tenantDB, tenantID, &role); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	if len(req.PermissionIDs) > 0 {
-		if err := h.svc.AddPermissions(tenantDB, role.ID, req.PermissionIDs); err != nil {
-			utils.ErrorResponse(c, http.StatusInternalServerError, "failed to attach permissions", err)
-			return
-		}
-	}
-
-	utils.SuccessResponse(c, http.StatusCreated, "role created", role)
+	c.JSON(http.StatusCreated, gin.H{"message": "Role created", "role": role})
 }
 
-func (h *RoleHandler) GetRole(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	idStr := c.Param("id")
-	id64, _ := strconv.ParseUint(idStr, 10, 32)
-
-	role, err := h.svc.GetByID(tenantDB, uint(id64))
-	if err != nil {
-		utils.ErrorResponse(c, http.StatusNotFound, "role not found", err)
-		return
-	}
-	utils.SuccessResponse(c, http.StatusOK, "role retrieved", role)
-}
-
+// 2. List Roles
 func (h *RoleHandler) ListRoles(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 
-	roles, err := h.svc.List(tenantDB)
+	roles, err := h.roleService.ListRoles(tenantDB)
 	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to list roles", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	utils.SuccessResponse(c, http.StatusOK, "roles list", roles)
+
+	c.JSON(http.StatusOK, gin.H{"data": roles})
 }
 
-func (h *RoleHandler) UpdateRole(c *gin.Context) {
+// 3. Get Role by ID
+func (h *RoleHandler) GetRole(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	idStr := c.Param("id")
-	id64, _ := strconv.ParseUint(idStr, 10, 32)
-	var r models.Role
-	if err := c.ShouldBindJSON(&r); err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "invalid body", err)
+	id, _ := strconv.Atoi(c.Param("id"))
+
+	role, err := h.roleService.GetRole(tenantDB, uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Role not found"})
 		return
 	}
-	r.ID = uint(id64)
-	if err := h.svc.Update(tenantDB, &r); err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to update role", err)
-		return
-	}
-	utils.SuccessResponse(c, http.StatusOK, "role updated", r)
+
+	c.JSON(http.StatusOK, gin.H{"data": role})
 }
 
-func (h *RoleHandler) DeleteRole(c *gin.Context) {
+// 4. Update Permissions for a Role
+func (h *RoleHandler) UpdatePermissions(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	idStr := c.Param("id")
-	id64, _ := strconv.ParseUint(idStr, 10, 32)
-	if err := h.svc.Delete(tenantDB, uint(id64)); err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to delete role", err)
-		return
+	roleID, _ := strconv.Atoi(c.Param("id"))
+
+	var req struct {
+		PermissionIDs []uint `json:"permission_ids" binding:"required"`
 	}
-	utils.SuccessResponse(c, http.StatusOK, "role deleted", nil)
-}
-
-// Attach permissions to role
-type AttachPermissionsRequest struct {
-	PermissionIDs []uint `json:"permission_ids" binding:"required"`
-}
-
-func (h *RoleHandler) AttachPermissions(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	idStr := c.Param("id")
-	id64, _ := strconv.ParseUint(idStr, 10, 32)
-	var req AttachPermissionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "invalid body", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.svc.AddPermissions(tenantDB, uint(id64), req.PermissionIDs); err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to attach permissions", err)
-		return
-	}
-	utils.SuccessResponse(c, http.StatusOK, "permissions attached", nil)
-}
 
-func (h *RoleHandler) DetachPermission(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	idStr := c.Param("id")
-	id64, _ := strconv.ParseUint(idStr, 10, 32)
-	pidStr := c.Param("pid")
-	pid64, _ := strconv.ParseUint(pidStr, 10, 32)
-	if err := h.svc.RemovePermission(tenantDB, uint(id64), uint(pid64)); err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to remove permission", err)
+	if err := h.roleService.UpdateRolePermissions(tenantDB, uint(roleID), req.PermissionIDs); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	utils.SuccessResponse(c, http.StatusOK, "permission removed", nil)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Permissions updated successfully"})
 }

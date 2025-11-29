@@ -1,45 +1,53 @@
 package services
 
 import (
+	"errors"
 	"go-multi-tenant/models"
 	"go-multi-tenant/repositories"
 
 	"gorm.io/gorm"
 )
 
-type RoleService struct {
-	// ❌ FIX: Repo removed from struct to make it stateless
-}
+type RoleService struct{}
 
 func NewRoleService() *RoleService {
 	return &RoleService{}
 }
 
-// ✅ FIX: Methods now accept DB connection
-func (s *RoleService) Create(db *gorm.DB, role *models.Role) error {
-	return repositories.NewRoleRepository(db).Create(role)
+func (s *RoleService) CreateRole(tenantDB *gorm.DB, tenantID uint, role *models.Role) error {
+	// Custom role creation logic
+	role.TenantID = tenantID
+	role.IsSystemRole = false // Custom roles system roles nahi hote, delete ho sakte hain
+
+	repo := repositories.NewRoleRepository(tenantDB)
+	return repo.Create(role)
 }
 
-func (s *RoleService) GetByID(db *gorm.DB, id uint) (*models.Role, error) {
-	return repositories.NewRoleRepository(db).GetByID(id)
+func (s *RoleService) ListRoles(tenantDB *gorm.DB) ([]models.Role, error) {
+	repo := repositories.NewRoleRepository(tenantDB)
+	return repo.List()
 }
 
-func (s *RoleService) List(db *gorm.DB) ([]models.Role, error) {
-	return repositories.NewRoleRepository(db).List()
+func (s *RoleService) GetRole(tenantDB *gorm.DB, id uint) (*models.Role, error) {
+	repo := repositories.NewRoleRepository(tenantDB)
+	return repo.GetByID(id)
 }
 
-func (s *RoleService) Update(db *gorm.DB, role *models.Role) error {
-	return repositories.NewRoleRepository(db).Update(role)
-}
+// Permissions assign karna role ko
+func (s *RoleService) UpdateRolePermissions(tenantDB *gorm.DB, roleID uint, permissionIDs []uint) error {
+	repo := repositories.NewRoleRepository(tenantDB)
 
-func (s *RoleService) Delete(db *gorm.DB, id uint) error {
-	return repositories.NewRoleRepository(db).Delete(id)
-}
+	// Check kar sakte hain ke role exist karta hai ya nahi
+	role, err := repo.GetByID(roleID)
+	if err != nil {
+		return err
+	}
 
-func (s *RoleService) AddPermissions(db *gorm.DB, roleID uint, permissionIDs []uint) error {
-	return repositories.NewRoleRepository(db).AddPermissions(roleID, permissionIDs)
-}
+	if role.IsSystemRole {
+		// Optional: System roles (like Tenant Admin) ko edit karne se rokna hai ya nahi?
+		// Usually System Roles fixed hote hain.
+		return errors.New("cannot modify system roles")
+	}
 
-func (s *RoleService) RemovePermission(db *gorm.DB, roleID uint, permissionID uint) error {
-	return repositories.NewRoleRepository(db).RemovePermission(roleID, permissionID)
+	return repo.AssignPermissions(roleID, permissionIDs)
 }

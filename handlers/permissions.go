@@ -1,85 +1,52 @@
 package handlers
 
 import (
+	"go-multi-tenant/config"
+	"go-multi-tenant/models"
+	"go-multi-tenant/services"
 	"net/http"
 	"strconv"
 
-	"go-multi-tenant/models"
-	"go-multi-tenant/services"
-	"go-multi-tenant/utils"
-
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 type PermissionHandler struct {
-	svc *services.PermissionService
+	permService *services.PermissionService
 }
 
-func NewPermissionHandler(svc *services.PermissionService) *PermissionHandler {
-	return &PermissionHandler{svc: svc}
+func NewPermissionHandler(permService *services.PermissionService) *PermissionHandler {
+	return &PermissionHandler{permService: permService}
 }
 
-func (h *PermissionHandler) CreatePermission(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	var p models.Permission
-	if err := c.ShouldBindJSON(&p); err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "invalid body", err)
+func (h *PermissionHandler) Create(c *gin.Context) {
+	var perm models.Permission
+	if err := c.ShouldBindJSON(&perm); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.svc.Create(tenantDB, &p); err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to create permission", err)
+
+	if err := h.permService.Create(config.MasterDB, &perm); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	utils.SuccessResponse(c, http.StatusCreated, "permission created", p)
+
+	c.JSON(http.StatusCreated, gin.H{"message": "Permission created", "data": perm})
 }
 
-func (h *PermissionHandler) GetPermission(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	idStr := c.Param("id")
-	id64, _ := strconv.ParseUint(idStr, 10, 32)
-	p, err := h.svc.GetByID(tenantDB, uint(id64))
+func (h *PermissionHandler) List(c *gin.Context) {
+	perms, err := h.permService.List(config.MasterDB)
 	if err != nil {
-		utils.ErrorResponse(c, http.StatusNotFound, "permission not found", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	utils.SuccessResponse(c, http.StatusOK, "permission retrieved", p)
+	c.JSON(http.StatusOK, gin.H{"data": perms})
 }
 
-func (h *PermissionHandler) ListPermissions(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	perms, err := h.svc.List(tenantDB)
-	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to list permissions", err)
+func (h *PermissionHandler) Delete(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	if err := h.permService.Delete(config.MasterDB, uint(id)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	utils.SuccessResponse(c, http.StatusOK, "permissions list", perms)
-}
-
-func (h *PermissionHandler) UpdatePermission(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	idStr := c.Param("id")
-	id64, _ := strconv.ParseUint(idStr, 10, 32)
-	var p models.Permission
-	if err := c.ShouldBindJSON(&p); err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "invalid body", err)
-		return
-	}
-	p.ID = uint(id64)
-	if err := h.svc.Update(tenantDB, &p); err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to update permission", err)
-		return
-	}
-	utils.SuccessResponse(c, http.StatusOK, "permission updated", p)
-}
-
-func (h *PermissionHandler) DeletePermission(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	idStr := c.Param("id")
-	id64, _ := strconv.ParseUint(idStr, 10, 32)
-	if err := h.svc.Delete(tenantDB, uint(id64)); err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "failed to delete permission", err)
-		return
-	}
-	utils.SuccessResponse(c, http.StatusOK, "permission deleted", nil)
+	c.JSON(http.StatusOK, gin.H{"message": "Permission deleted"})
 }

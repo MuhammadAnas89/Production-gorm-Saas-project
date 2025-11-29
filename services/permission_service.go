@@ -7,29 +7,23 @@ import (
 	"gorm.io/gorm"
 )
 
-type PermissionService struct {
-}
+type PermissionService struct{}
 
 func NewPermissionService() *PermissionService {
 	return &PermissionService{}
 }
 
-func (s *PermissionService) Create(db *gorm.DB, p *models.Permission) error {
-	return repositories.NewPermissionRepository(db).Create(p)
+func (s *PermissionService) Create(masterDB *gorm.DB, perm *models.Permission) error {
+	return repositories.NewPermissionRepository(masterDB).Create(perm)
 }
 
-func (s *PermissionService) GetByID(db *gorm.DB, id uint) (*models.Permission, error) {
-	return repositories.NewPermissionRepository(db).GetByID(id)
+func (s *PermissionService) List(masterDB *gorm.DB) ([]models.Permission, error) {
+	return repositories.NewPermissionRepository(masterDB).List()
 }
 
-func (s *PermissionService) List(db *gorm.DB) ([]models.Permission, error) {
-	return repositories.NewPermissionRepository(db).List()
+func (s *PermissionService) Delete(masterDB *gorm.DB, id uint) error {
+	return repositories.NewPermissionRepository(masterDB).Delete(id)
 }
-
-func (s *PermissionService) Update(db *gorm.DB, p *models.Permission) error {
-	return repositories.NewPermissionRepository(db).Update(p)
-}
-
-func (s *PermissionService) Delete(db *gorm.DB, id uint) error {
-	return repositories.NewPermissionRepository(db).Delete(id)
+func (s *PermissionService) UpdatePermiss(masterDB *gorm.DB, roleID uint, permIDs []uint) error {
+	return repositories.NewRoleRepository(masterDB).AssignPermissions(roleID, permIDs)
 }

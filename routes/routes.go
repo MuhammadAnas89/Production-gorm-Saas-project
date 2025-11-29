@@ -6,92 +6,103 @@ import (
 	"go-multi-tenant/middleware"
 	"go-multi-tenant/repositories"
 	"go-multi-tenant/services"
-	"go-multi-tenant/utils"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
 
 func SetupRoutes(router *gin.Engine) {
 
-	userRepo := repositories.NewUserRepository(config.MasterDB)
+	// ==========================================
+	// 1. DEPENDENCY INJECTION (Wiring)
+	// ==========================================
+
+	// -- Repositories (Master DB Dependent) --
 	tenantRepo := repositories.NewTenantRepository(config.MasterDB)
 
-	authService := services.NewAuthService(userRepo, tenantRepo)
+	// -- Services --
+	authService := services.NewAuthService(tenantRepo)
+	tenantService := services.NewTenantService(tenantRepo)
 	userService := services.NewUserService()
-	tenantService := services.NewTenantService(tenantRepo, userRepo)
-
-	//Services init (Empty constructor, no repo passed)
-	moduleService := services.NewModuleService()
-	permissionService := services.NewPermissionService()
+	catalogService := services.NewCatalogService()
+	inventoryService := services.NewInventoryService()
 	roleService := services.NewRoleService()
+	moduleService := services.NewModuleService()         // Super Admin
+	permissionService := services.NewPermissionService() // Super Admin
 
-	queueService := services.NewQueueService(userService, 3)
-	queueService.StartWorkers()
-
+	// -- Handlers --
 	authHandler := handlers.NewAuthHandler(authService)
-	userHandler := handlers.NewUserHandler(userService, queueService)
 	tenantHandler := handlers.NewTenantHandler(tenantService)
+	userHandler := handlers.NewUserHandler(userService)
+	catalogHandler := handlers.NewCatalogHandler(catalogService)
+	inventoryHandler := handlers.NewInventoryHandler(inventoryService)
+	roleHandler := handlers.NewRoleHandler(roleService)
+	moduleHandler := handlers.NewModuleHandler(moduleService)
+	permHandler := handlers.NewPermissionHandler(permissionService)
 
-	public := router.Group("/api/v1")
+	// ==========================================
+	// 2. ROUTE GROUPS
+	// ==========================================
+
+	api := router.Group("/api/v1")
+
+	// --- PUBLIC ROUTES (No Auth Required) ---
+	api.POST("/login", authHandler.Login)
+
+	// --- PROTECTED ROUTES (Auth + Tenant DB Switching) ---
+	protected := api.Group("/")
+	protected.Use(middleware.AuthMiddleware())     // 1. Verify JWT
+	protected.Use(middleware.TenantDBMiddleware()) // 2. Connect to Tenant DB
+
 	{
-		public.POST("/login", authHandler.Login)
-	}
-
-	protected := router.Group("/api/v1")
-	protected.Use(middleware.AuthMiddleware(authService))
-	protected.Use(middleware.TenantDBMiddleware(authService))
-	{
-		auth := protected.Group("/auth")
-		{
-			auth.POST("/logout", authHandler.Logout)
-		}
-
+		// === USER MANAGEMENT ===
 		users := protected.Group("/users")
-		{
-			users.POST("", middleware.PermissionMiddleware("user:create"), userHandler.CreateUser)
-			users.GET("", middleware.PermissionMiddleware("user:list"), userHandler.ListUsers)
-			users.GET("/:id", middleware.PermissionMiddleware("user:read"), userHandler.GetUser)
+		users.POST("", middleware.PermissionMiddleware("user:create"), userHandler.CreateUser)
+		users.GET("", middleware.PermissionMiddleware("user:read"), userHandler.ListUsers)
+		users.GET("/:id", middleware.PermissionMiddleware("user:read"), userHandler.GetUser)
+		users.PUT("/:id", middleware.PermissionMiddleware("user:update"), userHandler.UpdateUser)
+		users.DELETE("/:id", middleware.PermissionMiddleware("user:delete"), userHandler.DeleteUser)
 
-			users.PUT("/:id", middleware.PermissionMiddleware("user:update"), userHandler.UpdateUser)
-			users.DELETE("/:id", middleware.PermissionMiddleware("user:delete"), userHandler.DeleteUser)
-			users.GET("/roles/available", userHandler.GetAvailableRoles)
-			users.POST("/:id/roles", middleware.PermissionMiddleware("user:update"), userHandler.AssignRole)
-			users.DELETE("/:id/roles/:rid", middleware.PermissionMiddleware("user:update"), userHandler.RemoveRole)
-		}
+		// === PRODUCT CATALOG ===
+		products := protected.Group("/products")
+		products.POST("", middleware.PermissionMiddleware("product:create"), catalogHandler.CreateProduct)
+		products.GET("", middleware.PermissionMiddleware("product:read"), catalogHandler.ListProducts)
 
-		self := protected.Group("/self")
-		{
-			self.GET("", userHandler.GetSelf)
-		}
+		// === CATEGORIES ===
+		categories := protected.Group("/categories")
+		categories.POST("", middleware.PermissionMiddleware("category:create"), catalogHandler.CreateCategory)
+		categories.GET("", middleware.PermissionMiddleware("category:read"), catalogHandler.ListCategories)
 
-		tenants := protected.Group("/tenants")
-		tenants.Use(middleware.PermissionMiddleware("tenant:create"))
-		{
-			tenants.POST("", tenantHandler.CreateTenant)
-			tenants.GET("", tenantHandler.ListTenants)
-		}
-	}
+		// === INVENTORY & STOCK ===
+		inventory := protected.Group("/inventory")
+		inventory.PUT("/stock", middleware.PermissionMiddleware("inventory:update"), inventoryHandler.UpdateStock)
+		inventory.GET("/alerts", middleware.PermissionMiddleware("inventory:read"), inventoryHandler.GetLowStockAlerts)
 
-	admin := router.Group("/api/v1/admin")
-	admin.Use(middleware.AuthMiddleware(authService))
-	admin.Use(middleware.TenantDBMiddleware(authService))
-	{
-		admin.GET("/cache-stats", middleware.PermissionMiddleware("user:read"), func(c *gin.Context) {
-			cacheStats := map[string]interface{}{
-				"cached_tenants": config.TenantManager.GetCachedTenantCount(),
-				"memory_usage":   "optimized",
-			}
-			utils.SuccessResponse(c, http.StatusOK, "Cache statistics", cacheStats)
-		})
+		// === ROLE MANAGEMENT (Custom Roles) ===
+		roles := protected.Group("/roles")
+		roles.POST("", middleware.PermissionMiddleware("role:manage"), roleHandler.CreateRole)
+		roles.GET("", middleware.PermissionMiddleware("user:read"), roleHandler.ListRoles) // User read wala bhi dekh sake
+		roles.GET("/:id", middleware.PermissionMiddleware("role:manage"), roleHandler.GetRole)
+		roles.PUT("/:id/permissions", middleware.PermissionMiddleware("role:manage"), roleHandler.UpdatePermissions)
 
-		admin.POST("/clear-cache", middleware.PermissionMiddleware("tenant:create"), func(c *gin.Context) {
-			config.TenantManager.ClearCache()
-			utils.SuccessResponse(c, http.StatusOK, "Cache cleared successfully", nil)
-		})
+		// === SYSTEM / SUPER ADMIN ROUTES ===
+		// Ye routes sirf Super Admin (Master Tenant) use kar sakta hai
+		// ya jiske paas "system:*" permissions hon
 
-		RegisterModuleRoutes(admin, moduleService)
-		RegisterPermissionRoutes(admin, permissionService)
-		RegisterRoleRoutes(admin, roleService)
+		// Tenant Creation
+		protected.POST("/tenants", middleware.PermissionMiddleware("tenant:create"), tenantHandler.CreateTenant)
+		protected.GET("/tenants", middleware.PermissionMiddleware("tenant:manage"), tenantHandler.ListTenants)
+
+		// Module Management
+		modules := protected.Group("/modules")
+		modules.POST("", middleware.PermissionMiddleware("system:manage"), moduleHandler.Create)
+		modules.GET("", middleware.PermissionMiddleware("system:manage"), moduleHandler.List)
+		modules.PUT("", middleware.PermissionMiddleware("system:manage"), moduleHandler.Update)
+		modules.DELETE("/:id", middleware.PermissionMiddleware("system:manage"), moduleHandler.Delete)
+
+		// Permission Management
+		perms := protected.Group("/permissions")
+		perms.POST("", middleware.PermissionMiddleware("system:manage"), permHandler.Create)
+		perms.GET("", middleware.PermissionMiddleware("system:manage"), permHandler.List)
+		perms.DELETE("/:id", middleware.PermissionMiddleware("system:manage"), permHandler.Delete)
 	}
 }

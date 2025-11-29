@@ -1,241 +1,121 @@
 package handlers
 
 import (
-	"net/http"
-	"strconv"
-
 	"go-multi-tenant/models"
 	"go-multi-tenant/services"
-	"go-multi-tenant/utils"
+	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 type UserHandler struct {
-	userService  *services.UserService
-	queueService *services.QueueService
+	userService *services.UserService
 }
 
-func NewUserHandler(userService *services.UserService, queueService *services.QueueService) *UserHandler {
-	return &UserHandler{
-		userService:  userService,
-		queueService: queueService,
-	}
+func NewUserHandler(userService *services.UserService) *UserHandler {
+	return &UserHandler{userService: userService}
 }
 
-type CreateUserRequest struct {
-	Username string `json:"username" binding:"required"`
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=6"`
-	RoleID   uint   `json:"role_id" binding:"required"`
-}
-
-type CreateUserResponse struct {
-	JobID   string       `json:"job_id"`
-	Message string       `json:"message"`
-	User    *models.User `json:"user,omitempty"`
-	Error   string       `json:"error,omitempty"`
-}
-
+// 1. Create User (Already Sync)
 func (h *UserHandler) CreateUser(c *gin.Context) {
-	var req CreateUserRequest
+	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
+	tenantID := c.MustGet("tenantID").(uint)
+	userID := c.MustGet("userID").(uint)
+
+	// Load Current User for permissions
+	var currentUser models.User
+	tenantDB.Preload("Roles.Permissions").First(&currentUser, userID)
+
+	var req services.CreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid input", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	currentUser := c.MustGet("user").(*models.User)
-
-	jobID, err := h.queueService.EnqueueUserCreation(
-		currentUser.TenantID,
-		&services.CreateUserRequest{
-			Username: req.Username,
-			Email:    req.Email,
-			Password: req.Password,
-			RoleID:   req.RoleID,
-		},
-		currentUser,
-	)
-
+	user, err := h.userService.CreateUser(tenantDB, tenantID, &req, &currentUser)
 	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to create user", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	response := CreateUserResponse{
-		JobID:   jobID,
-		Message: "User creation job enqueued successfully",
-	}
-
-	utils.SuccessResponse(c, http.StatusAccepted, "User creation initiated", response)
+	c.JSON(http.StatusCreated, gin.H{"message": "User created", "user": user})
 }
 
-func (h *UserHandler) GetQueueStats(c *gin.Context) {
-	stats := h.queueService.GetQueueStats()
-	utils.SuccessResponse(c, http.StatusOK, "Queue statistics", stats)
-}
-
-func (h *UserHandler) GetAvailableRoles(c *gin.Context) {
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	currentUser := c.MustGet("user").(*models.User)
-
-	roles, err := h.userService.GetAvailableRoles(tenantDB, currentUser)
-	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to get available roles", err)
-		return
-	}
-
-	utils.SuccessResponse(c, http.StatusOK, "Available roles retrieved successfully", roles)
-}
-
+// 2. Get User
 func (h *UserHandler) GetUser(c *gin.Context) {
-	userIDStr := c.Param("id")
-	userID, err := strconv.ParseUint(userIDStr, 10, 32)
-	if err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid user ID", err)
-		return
-	}
-
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	currentUser := c.MustGet("user").(*models.User)
+	id, _ := strconv.Atoi(c.Param("id"))
+	userID := c.MustGet("userID").(uint)
 
-	user, err := h.userService.GetUser(tenantDB, uint(userID), currentUser)
+	// Current User pass karna zaroori hai agar hum logic lagayen ke "Sirf apni profile dekh sake"
+	var currentUser models.User
+	tenantDB.Preload("Roles").First(&currentUser, userID)
+
+	user, err := h.userService.GetUser(tenantDB, uint(id), &currentUser)
 	if err != nil {
-		utils.ErrorResponse(c, http.StatusNotFound, "User not found", err)
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
 
-	utils.SuccessResponse(c, http.StatusOK, "User retrieved successfully", user)
+	c.JSON(http.StatusOK, gin.H{"data": user})
 }
 
-func (h *UserHandler) UpdateUser(c *gin.Context) {
-	userIDStr := c.Param("id")
-	userID, err := strconv.ParseUint(userIDStr, 10, 32)
-	if err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid user ID", err)
-		return
-	}
-
-	var updateData map[string]interface{}
-	if err := c.ShouldBindJSON(&updateData); err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid input", err)
-		return
-	}
-
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	currentUser := c.MustGet("user").(*models.User)
-
-	user, err := h.userService.UpdateUser(tenantDB, uint(userID), updateData, currentUser)
-	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to update user", err)
-		return
-	}
-
-	utils.SuccessResponse(c, http.StatusOK, "User updated successfully", user)
-}
-
-func (h *UserHandler) DeleteUser(c *gin.Context) {
-	userIDStr := c.Param("id")
-	userID, err := strconv.ParseUint(userIDStr, 10, 32)
-	if err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid user ID", err)
-		return
-	}
-
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	currentUser := c.MustGet("user").(*models.User)
-
-	err = h.userService.DeleteUser(tenantDB, uint(userID), currentUser)
-	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to delete user", err)
-		return
-	}
-
-	utils.SuccessResponse(c, http.StatusOK, "User deleted successfully", nil)
-}
-
+// 3. List Users
 func (h *UserHandler) ListUsers(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	currentUser := c.MustGet("user").(*models.User)
+	userID := c.MustGet("userID").(uint)
 
-	users, err := h.userService.ListUsers(tenantDB, currentUser)
+	var currentUser models.User
+	tenantDB.Preload("Roles.Permissions").First(&currentUser, userID)
+
+	users, err := h.userService.ListUsers(tenantDB, &currentUser)
 	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to list users", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	utils.SuccessResponse(c, http.StatusOK, "Users retrieved successfully", users)
+	c.JSON(http.StatusOK, gin.H{"data": users})
 }
 
-func (h *UserHandler) GetSelf(c *gin.Context) {
+// 4. Update User
+func (h *UserHandler) UpdateUser(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	currentUser := c.MustGet("user").(*models.User)
+	id, _ := strconv.Atoi(c.Param("id"))
+	userID := c.MustGet("userID").(uint)
 
-	user, err := h.userService.GetSelf(tenantDB, currentUser)
-	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to get user info", err)
-		return
-	}
+	var currentUser models.User
+	tenantDB.Preload("Roles.Permissions").First(&currentUser, userID)
 
-	utils.SuccessResponse(c, http.StatusOK, "User info retrieved successfully", user)
-}
-
-// Assign role to user
-type AssignRoleRequest struct {
-	RoleID uint `json:"role_id" binding:"required"`
-}
-
-func (h *UserHandler) AssignRole(c *gin.Context) {
-	userIDStr := c.Param("id")
-	userID, err := strconv.ParseUint(userIDStr, 10, 32)
-	if err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid user ID", err)
-		return
-	}
-
-	var req AssignRoleRequest
+	var req map[string]interface{}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid input", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	currentUser := c.MustGet("user").(*models.User)
-
-	err = h.userService.AssignRole(tenantDB, uint(userID), req.RoleID, currentUser)
+	user, err := h.userService.UpdateUser(tenantDB, uint(id), req, &currentUser)
 	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to assign role", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	utils.SuccessResponse(c, http.StatusOK, "Role assigned successfully", nil)
+	c.JSON(http.StatusOK, gin.H{"message": "User updated", "user": user})
 }
 
-// Remove role from user
-func (h *UserHandler) RemoveRole(c *gin.Context) {
-	userIDStr := c.Param("id")
-	userID, err := strconv.ParseUint(userIDStr, 10, 32)
-	if err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid user ID", err)
-		return
-	}
-
-	roleIDStr := c.Param("rid")
-	roleID, err := strconv.ParseUint(roleIDStr, 10, 32)
-	if err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid role ID", err)
-		return
-	}
-
+// 5. Delete User
+func (h *UserHandler) DeleteUser(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	currentUser := c.MustGet("user").(*models.User)
+	id, _ := strconv.Atoi(c.Param("id"))
+	userID := c.MustGet("userID").(uint)
 
-	err = h.userService.RemoveRole(tenantDB, uint(userID), uint(roleID), currentUser)
-	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to remove role", err)
+	var currentUser models.User
+	tenantDB.Preload("Roles.Permissions").First(&currentUser, userID)
+
+	if err := h.userService.DeleteUser(tenantDB, uint(id), &currentUser); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	utils.SuccessResponse(c, http.StatusOK, "Role removed successfully", nil)
+	c.JSON(http.StatusOK, gin.H{"message": "User deleted"})
 }

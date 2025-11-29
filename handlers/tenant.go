@@ -1,9 +1,7 @@
 package handlers
 
 import (
-	"go-multi-tenant/models"
 	"go-multi-tenant/services"
-	"go-multi-tenant/utils"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -17,42 +15,32 @@ func NewTenantHandler(tenantService *services.TenantService) *TenantHandler {
 	return &TenantHandler{tenantService: tenantService}
 }
 
-type CreateTenantRequest struct {
-	Name          string              `json:"name" binding:"required"`
-	DatabaseType  models.DatabaseType `json:"database_type" binding:"required"`
-	AdminUsername string              `json:"admin_username" binding:"required"`
-	AdminEmail    string              `json:"admin_email" binding:"required,email"`
-	AdminPassword string              `json:"admin_password" binding:"required,min=6"`
-}
-
 func (h *TenantHandler) CreateTenant(c *gin.Context) {
-	var req CreateTenantRequest
+	var req services.CreateTenantRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid input", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	response, err := h.tenantService.CreateTenant(&services.CreateTenantRequest{
-		Name:          req.Name,
-		DatabaseType:  req.DatabaseType,
-		AdminUsername: req.AdminUsername,
-		AdminEmail:    req.AdminEmail,
-		AdminPassword: req.AdminPassword,
-	})
+	// Service Call (Creates Tenant, DB, Admin & Permissions)
+	tenant, err := h.tenantService.CreateTenant(&req)
 	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to create tenant", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create tenant", "details": err.Error()})
 		return
 	}
 
-	utils.SuccessResponse(c, http.StatusCreated, "Tenant created successfully", response)
+	c.JSON(http.StatusCreated, gin.H{
+		"message":   "Tenant created successfully",
+		"tenant_id": tenant.ID,
+		"db_name":   tenant.DBName,
+	})
 }
 
 func (h *TenantHandler) ListTenants(c *gin.Context) {
 	tenants, err := h.tenantService.ListTenants()
 	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to list tenants", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	utils.SuccessResponse(c, http.StatusOK, "Tenants retrieved successfully", tenants)
+	c.JSON(http.StatusOK, gin.H{"data": tenants})
 }

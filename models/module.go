@@ -1,10 +1,8 @@
 package models
 
-import "gorm.io/gorm"
-
 type Module struct {
-	gorm.Model
-	Name        string       `json:"name" gorm:"unique;not null"`
-	Description string       `json:"description,omitempty"`
+	ID          uint         `gorm:"primaryKey" json:"id"`
+	Name        string       `gorm:"unique;not null" json:"name"`
+	Description string       `json:"description"`
 	Permissions []Permission `gorm:"foreignKey:ModuleID" json:"permissions,omitempty"`
 }

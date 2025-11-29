@@ -10,84 +10,96 @@ import (
 
 type TenantService struct {
 	tenantRepo repositories.TenantRepository
-	userRepo   repositories.UserRepository
 }
 
-func NewTenantService(tenantRepo repositories.TenantRepository, userRepo repositories.UserRepository) *TenantService {
-	return &TenantService{
-		tenantRepo: tenantRepo,
-		userRepo:   userRepo,
-	}
+func NewTenantService(tenantRepo repositories.TenantRepository) *TenantService {
+	return &TenantService{tenantRepo: tenantRepo}
 }
 
 type CreateTenantRequest struct {
 	Name          string              `json:"name"`
 	DatabaseType  models.DatabaseType `json:"database_type"`
+	PlanID        uint                `json:"plan_id"` // Optional (Default to Free)
 	AdminUsername string              `json:"admin_username"`
 	AdminEmail    string              `json:"admin_email"`
 	AdminPassword string              `json:"admin_password"`
 }
 
-type CreateTenantResponse struct {
-	Tenant    *models.Tenant `json:"tenant"`
-	AdminUser *models.User   `json:"admin_user"`
-}
-
-func (s *TenantService) CreateTenant(req *CreateTenantRequest) (*CreateTenantResponse, error) {
-
-	var dbName string
-	if req.DatabaseType == models.DedicatedDB {
-		dbName = fmt.Sprintf("tenant_%s_db", req.Name)
-	} else {
-		dbName = "shared_tenants_db"
+func (s *TenantService) CreateTenant(req *CreateTenantRequest) (*models.Tenant, error) {
+	// 1. Check Global Email Uniqueness
+	if _, err := s.tenantRepo.GetGlobalIdentity(req.AdminEmail); err == nil {
+		return nil, fmt.Errorf("email %s is already registered globally", req.AdminEmail)
 	}
 
+	// 2. Determine DB Name
+	dbName := "shared_tenants_db"
+	if req.DatabaseType == models.DedicatedDB {
+		dbName = fmt.Sprintf("tenant_%s_db", req.Name)
+	}
+
+	// 3. Select Plan
+	var planID uint = req.PlanID
+	if planID == 0 {
+		// Default to Free Plan
+		var freePlan models.Plan
+		config.MasterDB.Where("type = ?", models.PlanFree).First(&freePlan)
+		planID = freePlan.ID
+	}
+
+	// 4. Create Tenant Record (Master DB)
 	tenant := &models.Tenant{
 		Name:         req.Name,
 		DatabaseType: req.DatabaseType,
 		DBName:       dbName,
 		IsActive:     true,
+		PlanID:       planID,
 	}
 
-	if err := s.tenantRepo.Create(tenant); err != nil {
+	tx := config.MasterDB.Begin()
+	if err := tx.Create(tenant).Error; err != nil {
+		tx.Rollback()
 		return nil, err
 	}
 
-	if tenant.DatabaseType == models.DedicatedDB {
+	// 5. Setup Database
+	if req.DatabaseType == models.DedicatedDB {
 		if err := config.TenantManager.CreateDedicatedDatabase(tenant); err != nil {
-			s.tenantRepo.Delete(tenant.ID) // Rollback
-			return nil, fmt.Errorf("failed to create dedicated database: %w", err)
-		}
-	} else {
-		if err := config.TenantManager.CreateSharedDatabase(); err != nil {
-			s.tenantRepo.Delete(tenant.ID) // Rollback
-			return nil, fmt.Errorf("failed to create shared database: %w", err)
+			tx.Rollback()
+			return nil, err
 		}
 	}
 
+	// 6. Connect to Tenant DB
 	tenantDB, err := config.TenantManager.GetTenantDB(tenant)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to new tenant db: %w", err)
+		tx.Rollback()
+		return nil, err
 	}
 
-	// 5. "Tenant Admin" Role Create karo
+	// 7. Create "Tenant Admin" Role
 	adminRole := models.Role{
 		Name:         "Tenant Admin",
 		Description:  "Administrator for this workspace",
 		IsSystemRole: true,
 		TenantID:     tenant.ID,
 	}
+	tenantDB.Create(&adminRole)
 
-	if err := tenantDB.Where("name = ?", "Tenant Admin").FirstOrCreate(&adminRole).Error; err != nil {
-		return nil, fmt.Errorf("failed to create admin role: %w", err)
-	}
-
+	// 8. Assign Permissions (Only Business Logic, No System/SuperAdmin perms)
 	var allowedPerms []models.Permission
+	// Filter out "system" category from Master DB
+	config.MasterDB.Where("category NOT IN ?", []string{"system", "admin"}).Find(&allowedPerms)
 
-	if err := tenantDB.Where("category IN ?", []string{"user", "role"}).Find(&allowedPerms).Error; err == nil {
+	if len(allowedPerms) > 0 {
+		// Sync to Tenant DB
+		for _, p := range allowedPerms {
+			tenantDB.FirstOrCreate(&models.Permission{Name: p.Name}, p)
+		}
+		// Assign to Role
 		tenantDB.Model(&adminRole).Association("Permissions").Replace(&allowedPerms)
 	}
 
+	// 9. Create Admin User in Tenant DB
 	hashedPassword, _ := utils.HashPassword(req.AdminPassword)
 	adminUser := &models.User{
 		TenantID: tenant.ID,
@@ -98,23 +110,28 @@ func (s *TenantService) CreateTenant(req *CreateTenantRequest) (*CreateTenantRes
 	}
 
 	if err := tenantDB.Create(adminUser).Error; err != nil {
-		return nil, fmt.Errorf("failed to create admin user: %w", err)
+		tx.Rollback()
+		return nil, err
+	}
+	tenantDB.Model(adminUser).Association("Roles").Append(&adminRole)
+
+	// 10. ✅ REGISTER GLOBAL IDENTITY (Loop Fix)
+	globalID := models.GlobalIdentity{
+		Email:    req.AdminEmail,
+		TenantID: tenant.ID,
+	}
+	if err := tx.Create(&globalID).Error; err != nil {
+		tx.Rollback()
+		return nil, err
 	}
 
-	if err := tenantDB.Model(adminUser).Association("Roles").Append(&adminRole); err != nil {
-		return nil, fmt.Errorf("failed to assign role to user: %w", err)
-	}
-
-	return &CreateTenantResponse{
-		Tenant:    tenant,
-		AdminUser: adminUser,
-	}, nil
+	tx.Commit()
+	return tenant, nil
 }
 
 func (s *TenantService) ListTenants() ([]models.Tenant, error) {
-	return s.tenantRepo.List()
-}
-
-func (s *TenantService) GetTenantByID(id uint) (*models.Tenant, error) {
-	return s.tenantRepo.GetByID(id)
+	// Simple wrapper around repo
+	var tenants []models.Tenant
+	err := config.MasterDB.Preload("Plan").Find(&tenants).Error
+	return tenants, err
 }

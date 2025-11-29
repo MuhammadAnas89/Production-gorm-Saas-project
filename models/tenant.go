@@ -14,14 +14,20 @@ const (
 )
 
 type Tenant struct {
-	ID           uint           `gorm:"primaryKey" json:"id"`
-	Name         string         `gorm:"type:varchar(255);uniqueIndex;not null" json:"name"`
-	DatabaseType DatabaseType   `gorm:"type:enum('shared','dedicated');not null" json:"database_type"`
-	DBName       string         `gorm:"type:varchar(255);not null" json:"db_name"`
-	IsActive     bool           `gorm:"default:true" json:"is_active"`
-	CreatedAt    time.Time      `json:"created_at"`
-	UpdatedAt    time.Time      `json:"updated_at"`
-	DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+	ID           uint         `gorm:"primaryKey" json:"id"`
+	Name         string       `gorm:"type:varchar(255);uniqueIndex;not null" json:"name"`
+	DatabaseType DatabaseType `gorm:"type:varchar(50);not null" json:"database_type"`
+	DBName       string       `gorm:"type:varchar(255);not null" json:"db_name"`
+	IsActive     bool         `gorm:"default:true" json:"is_active"`
+
+	// Plan Information
+	PlanID     uint       `json:"plan_id"`
+	Plan       *Plan      `gorm:"foreignKey:PlanID" json:"plan,omitempty"`
+	PlanExpiry *time.Time `json:"plan_expiry,omitempty"` // Null for lifetime
+
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 func (t *Tenant) GetActualDBName() string {

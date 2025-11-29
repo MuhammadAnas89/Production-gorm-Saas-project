@@ -1,9 +1,7 @@
 package handlers
 
 import (
-	"go-multi-tenant/models"
 	"go-multi-tenant/services"
-	"go-multi-tenant/utils"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -17,53 +15,33 @@ func NewAuthHandler(authService *services.AuthService) *AuthHandler {
 	return &AuthHandler{authService: authService}
 }
 
-type LoginRequest struct {
-	Username string `json:"username" binding:"required"`
+type LoginInput struct {
+	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required"`
 }
 
-type LoginResponse struct {
-	APIKey string       `json:"api_key"`
-	User   *models.User `json:"user"`
-}
-
 func (h *AuthHandler) Login(c *gin.Context) {
-	var req LoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid input", err)
+	var input LoginInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input", "details": err.Error()})
 		return
 	}
 
-	user, apiKey, err := h.authService.Login(req.Username, req.Password)
+	// Service call (Loop Free & JWT)
+	user, token, err := h.authService.Login(input.Email, input.Password)
 	if err != nil {
-		utils.ErrorResponse(c, http.StatusUnauthorized, "Login failed", err)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
-	response := LoginResponse{
-		APIKey: apiKey,
-		User:   user,
-	}
-
-	utils.SuccessResponse(c, http.StatusOK, "Login successful", response)
-}
-
-func (h *AuthHandler) Logout(c *gin.Context) {
-	apiKey := c.GetHeader("Authorization")
-	if apiKey == "" {
-		apiKey = c.GetHeader("X-API-Key")
-	}
-
-	if apiKey == "" {
-		utils.ErrorResponse(c, http.StatusBadRequest, "API key required", nil)
-		return
-	}
-
-	err := h.authService.Logout(apiKey)
-	if err != nil {
-		utils.ErrorResponse(c, http.StatusInternalServerError, "Logout failed", err)
-		return
-	}
-
-	utils.SuccessResponse(c, http.StatusOK, "Logout successful", nil)
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Login successful",
+		"token":   token, // JWT Token
+		"user": gin.H{
+			"id":       user.ID,
+			"username": user.Username,
+			"email":    user.Email,
+			"role":     user.Roles[0].Name, // Returning first role
+		},
+	})
 }

@@ -8,58 +8,57 @@ import (
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 var MasterDB *gorm.DB
 
 func InitMasterDB(cfg *Config) error {
-	if MasterDB != nil {
-		return nil // Already initialized
-	}
-
 	var err error
-	MasterDB, err = gorm.Open(mysql.Open(cfg.MasterDBDSN), &gorm.Config{})
+
+	// Logger taaki errors nazar ayen
+	newLogger := logger.New(
+		log.New(log.Writer(), "\r\n", log.LstdFlags),
+		logger.Config{
+			SlowThreshold:             time.Second,
+			LogLevel:                  logger.Error,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  true,
+		},
+	)
+
+	MasterDB, err = gorm.Open(mysql.Open(cfg.MasterDBDSN), &gorm.Config{
+		Logger: newLogger,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to connect to master database: %w", err)
 	}
 
-	// Get underlying sql.DB to configure connection pool
-	sqlDB, err := MasterDB.DB()
-	if err != nil {
-		return fmt.Errorf("failed to get sql.DB from gorm.DB: %w", err)
-	}
-
-	// Configure connection pool
+	// Connection Pool Settings
+	sqlDB, _ := MasterDB.DB()
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetMaxOpenConns(100)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	err = MasterDB.AutoMigrate(
+		&models.GlobalIdentity{},
+		&models.Plan{},
 		&models.Tenant{},
+		&models.Module{},
 		&models.User{},
 		&models.Role{},
 		&models.Permission{},
-		&models.Module{},
 	)
+
 	if err != nil {
 		return fmt.Errorf("failed to migrate master database: %w", err)
 	}
 
-	log.Println("Master database connected and migrated successfully")
+	log.Println("✅ Master database connected and migrated successfully")
 	return nil
 }
 
+// Getter Function (Best Practice)
 func GetMasterDB() *gorm.DB {
 	return MasterDB
-}
-
-func CloseMasterDB() error {
-	if MasterDB != nil {
-		sqlDB, err := MasterDB.DB()
-		if err != nil {
-			return err
-		}
-		return sqlDB.Close()
-	}
-	return nil
 }

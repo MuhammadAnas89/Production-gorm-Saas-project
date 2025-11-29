@@ -1,100 +1,139 @@
 package services
 
 import (
-	"log"
-	"os"
-
 	"go-multi-tenant/models"
 	"go-multi-tenant/utils"
+	"log"
+	"os"
 
 	"gorm.io/gorm"
 )
 
 func SeedMasterData(db *gorm.DB, username, email, password string) error {
 
+	// ==========================================
+	// 1. SEED PLANS (Free, Monthly, Yearly)
+	// ==========================================
+	plans := []models.Plan{
+		{
+			Name: "Free Starter", Type: models.PlanFree,
+			Price: 0, MaxUsers: 2, MaxProducts: 5, StorageLimit: 500, IsActive: true,
+		},
+		{
+			Name: "Pro Monthly", Type: models.PlanStandard,
+			Price: 29.99, MaxUsers: 10, MaxProducts: 100, StorageLimit: 5000, IsActive: true,
+		},
+		{
+			Name: "Pro Yearly", Type: models.PlanPremium,
+			Price: 299.99, MaxUsers: 10, MaxProducts: 100, StorageLimit: 5000, IsActive: true,
+		},
+	}
+
+	for _, p := range plans {
+		if err := db.Where("name = ?", p.Name).FirstOrCreate(&p).Error; err != nil {
+			log.Printf("Error seeding plan %s: %v", p.Name, err)
+		}
+	}
+
+	// Free plan ID utha lo (Master Tenant ke liye)
+	var freePlan models.Plan
+	db.Where("type = ?", models.PlanFree).First(&freePlan)
+
+	// ==========================================
+	// 2. CREATE MASTER TENANT
+	// ==========================================
 	masterTenant := models.Tenant{
 		Name:         "Master Tenant",
 		DatabaseType: models.SharedDB,
 		DBName:       "master_tenant_db",
 		IsActive:     true,
+		PlanID:       freePlan.ID,
 	}
 
 	if err := db.Where("name = ?", masterTenant.Name).FirstOrCreate(&masterTenant).Error; err != nil {
-		log.Printf("warning: failed to seed tenant %s: %v", masterTenant.Name, err)
 		return err
 	}
 
+	// ==========================================
+	// 3. DEFINE MODULES
+	// ==========================================
 	modules := []models.Module{
-		{Name: "User Management", Description: "Manage users and their permissions"},
-		{Name: "Tenant Management", Description: "Manage tenants and their databases"},
-		{Name: "Role Management", Description: "Manage roles and permissions"},
-		{Name: "System Administration", Description: "System-wide administration"},
+		{Name: "User Management", Description: "Manage tenant users and roles"},
+		{Name: "Product Management", Description: "Manage products catalog"},
+		{Name: "Category Management", Description: "Manage product categories"},
+		{Name: "Inventory Management", Description: "Track stock and warehouses"},
+		{Name: "Reporting", Description: "View sales and audit logs"},
+		{Name: "System Admin", Description: "Super Admin only features"},
 	}
 
 	for i := range modules {
 		if err := db.FirstOrCreate(&modules[i], models.Module{Name: modules[i].Name}).Error; err != nil {
-			log.Printf("warning: failed to seed module %s: %v", modules[i].Name, err)
+			log.Printf("Error seeding module %s: %v", modules[i].Name, err)
 		}
 	}
 
+	// ==========================================
+	// 4. DEFINE PERMISSIONS
+	// ==========================================
 	permissions := []models.Permission{
+		// User & Role
+		{Name: "user:create", Category: "user", ModuleID: &modules[0].ID},
+		{Name: "user:read", Category: "user", ModuleID: &modules[0].ID},
+		{Name: "user:update", Category: "user", ModuleID: &modules[0].ID},
+		{Name: "user:delete", Category: "user", ModuleID: &modules[0].ID},
+		{Name: "role:manage", Category: "role", ModuleID: &modules[0].ID},
 
-		// User Management Permissions
-		{Name: "user:list", Description: "List users", Category: "user", ModuleID: &modules[0].ID},
-		{Name: "user:create", Description: "Create new users", Category: "user", ModuleID: &modules[0].ID},
-		{Name: "user:read", Description: "View specific users", Category: "user", ModuleID: &modules[0].ID},
-		{Name: "user:update", Description: "Update users", Category: "user", ModuleID: &modules[0].ID},
-		{Name: "user:delete", Description: "Delete users", Category: "user", ModuleID: &modules[0].ID},
+		// Product
+		{Name: "product:create", Category: "product", ModuleID: &modules[1].ID},
+		{Name: "product:read", Category: "product", ModuleID: &modules[1].ID},
+		{Name: "product:update", Category: "product", ModuleID: &modules[1].ID},
+		{Name: "product:delete", Category: "product", ModuleID: &modules[1].ID},
 
-		// Tenant Management Permissions (Sirf Super Admin ke liye relevant hain)
-		{Name: "tenant:create", Description: "Create new tenants", Category: "tenant", ModuleID: &modules[1].ID},
-		{Name: "tenant:read", Description: "View tenants", Category: "tenant", ModuleID: &modules[1].ID},
-		{Name: "tenant:update", Description: "Update tenants", Category: "tenant", ModuleID: &modules[1].ID},
-		{Name: "tenant:delete", Description: "Delete tenants", Category: "tenant", ModuleID: &modules[1].ID},
+		// Category
+		{Name: "category:create", Category: "category", ModuleID: &modules[2].ID},
+		{Name: "category:read", Category: "category", ModuleID: &modules[2].ID},
+		{Name: "category:update", Category: "category", ModuleID: &modules[2].ID},
+		{Name: "category:delete", Category: "category", ModuleID: &modules[2].ID},
 
-		// Role Management Permissions
-		{Name: "role:create", Description: "Create new roles", Category: "role", ModuleID: &modules[2].ID},
-		{Name: "role:read", Description: "View roles", Category: "role", ModuleID: &modules[2].ID},
-		{Name: "role:update", Description: "Update roles", Category: "role", ModuleID: &modules[2].ID},
-		{Name: "role:delete", Description: "Delete roles", Category: "role", ModuleID: &modules[2].ID},
-		{Name: "permission:manage", Description: "Manage permissions", Category: "role", ModuleID: &modules[2].ID},
+		// Inventory
+		{Name: "inventory:read", Category: "inventory", ModuleID: &modules[3].ID},
+		{Name: "inventory:update", Category: "inventory", ModuleID: &modules[3].ID},
 
-		// System Administration Permissions
-		{Name: "system:config", Description: "Configure system settings", Category: "system", ModuleID: &modules[3].ID},
-		{Name: "system:monitor", Description: "Monitor system health", Category: "system", ModuleID: &modules[3].ID},
-		{Name: "system:backup", Description: "Perform system backups", Category: "system", ModuleID: &modules[3].ID},
+		// Reporting
+		{Name: "report:view", Category: "report", ModuleID: &modules[4].ID},
 
-		// Full Admin Permission
-		{Name: "admin:full", Description: "Full administrative access", Category: "admin", ModuleID: &modules[3].ID},
+		// System (Only for Super Admin)
+		{Name: "tenant:create", Category: "system", ModuleID: &modules[5].ID},
+		{Name: "tenant:manage", Category: "system", ModuleID: &modules[5].ID},
+		{Name: "plan:manage", Category: "system", ModuleID: &modules[5].ID},
+		{Name: "system:manage", Category: "system", ModuleID: &modules[5].ID},
 	}
 
 	for i := range permissions {
 		if err := db.FirstOrCreate(&permissions[i], models.Permission{Name: permissions[i].Name}).Error; err != nil {
-			log.Printf("warning: failed to seed permission %s: %v", permissions[i].Name, err)
+			log.Printf("Error seeding permission %s: %v", permissions[i].Name, err)
 		}
 	}
 
+	// ==========================================
+	// 5. CREATE SUPER ADMIN ROLE & USER
+	// ==========================================
 	superAdminRole := models.Role{
 		Name:         "Super Administrator",
-		Description:  "Full system access with all permissions",
+		Description:  "System Owner - Full Access",
 		IsSystemRole: true,
 		TenantID:     masterTenant.ID,
 	}
 
-	if err := db.Where("name = ? AND tenant_id = ?", superAdminRole.Name, masterTenant.ID).
-		FirstOrCreate(&superAdminRole).Error; err != nil {
+	if err := db.Where("name = ? AND tenant_id = ?", superAdminRole.Name, masterTenant.ID).FirstOrCreate(&superAdminRole).Error; err != nil {
 		return err
 	}
 
 	var allPermissions []models.Permission
-	if err := db.Find(&allPermissions).Error; err != nil {
-		return err
-	}
+	db.Find(&allPermissions)
+	db.Model(&superAdminRole).Association("Permissions").Replace(&allPermissions)
 
-	if err := db.Model(&superAdminRole).Association("Permissions").Replace(&allPermissions); err != nil {
-		log.Printf("warning: failed to assign all permissions to Super Administrator: %v", err)
-	}
-
+	// User Defaults
 	if username == "" {
 		username = os.Getenv("SUPERADMIN_USERNAME")
 	}
@@ -113,19 +152,17 @@ func SeedMasterData(db *gorm.DB, username, email, password string) error {
 	}
 	if password == "" {
 		password = "Admin123!"
-		log.Println("warning: using default SUPERADMIN_PASSWORD; set env SUPERADMIN_PASSWORD in production")
 	}
+
+	hashed, _ := utils.HashPassword(password)
 
 	var admin models.User
+	err := db.Where("email = ?", email).First(&admin).Error
 
-	err := db.Where("(username = ? OR email = ?) AND tenant_id = ?", username, email, masterTenant.ID).First(&admin).Error
-
-	hashed, errHash := utils.HashPassword(password)
-	if errHash != nil {
-		return errHash
-	}
-
-	if err == gorm.ErrRecordNotFound {
+	// ✅ LINTER FIX: Using switch instead of if-else chain
+	switch err {
+	case gorm.ErrRecordNotFound:
+		// Create New Admin
 		admin = models.User{
 			TenantID: masterTenant.ID,
 			Username: username,
@@ -133,31 +170,31 @@ func SeedMasterData(db *gorm.DB, username, email, password string) error {
 			Password: hashed,
 			IsActive: true,
 		}
-		if err := db.Create(&admin).Error; err != nil {
-			return err
+		if createErr := db.Create(&admin).Error; createErr != nil {
+			return createErr
 		}
-		log.Printf("Superadmin user '%s' created in Master Tenant", username)
-	} else if err == nil {
+		db.Model(&admin).Association("Roles").Append(&superAdminRole)
 
+		// ✅ Global Identity (Loop Fix)
+		db.Create(&models.GlobalIdentity{
+			Email:    email,
+			TenantID: masterTenant.ID,
+		})
+		log.Println("✅ Super Admin Created & Registered in Global Identity")
+
+	case nil:
+		// Update Existing Admin
 		admin.Password = hashed
 		admin.IsActive = true
-		if err := db.Save(&admin).Error; err != nil {
-			return err
+		if saveErr := db.Save(&admin).Error; saveErr != nil {
+			return saveErr
 		}
 		log.Printf("Superadmin user '%s' updated", username)
-	} else {
+
+	default:
+		// Database Error
 		return err
 	}
-
-	if err := db.Model(&admin).Association("Roles").Append(&superAdminRole); err != nil {
-		log.Printf("warning: failed to attach super role to admin: %v", err)
-	}
-
-	log.Println("✅ Master data seeded successfully (Clean Architecture)!")
-	log.Printf("Super Administrator Credentials:")
-	log.Printf("Username: %s", username)
-	log.Printf("Email: %s", email)
-	log.Printf("Password: %s", password)
 
 	return nil
 }
