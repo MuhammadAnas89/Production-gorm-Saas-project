@@ -55,7 +55,6 @@ func (tm *TenantDBManager) initializeTenantDB(tenant *models.Tenant) (*gorm.DB, 
 	}
 
 	actualDBName := tenant.GetActualDBName()
-	// Dynamic Connection String
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:3306)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 		tm.config.DBUser, tm.config.DBPassword, tm.config.DBHost, actualDBName)
 
@@ -69,26 +68,35 @@ func (tm *TenantDBManager) initializeTenantDB(tenant *models.Tenant) (*gorm.DB, 
 		return nil, fmt.Errorf("failed to connect to tenant db %s: %w", actualDBName, err)
 	}
 
-	// Optimized Pool
 	sqlDB, _ := db.DB()
 	sqlDB.SetMaxIdleConns(5)
 	sqlDB.SetMaxOpenConns(50)
 	sqlDB.SetConnMaxLifetime(30 * time.Minute)
 
-	// ✅ TENANT DB MIGRATIONS (Business Tables Only)
-	err = db.AutoMigrate(
+	// =====================================================
+	// ✅ FIX: Migrations Split kar di hain
+	// =====================================================
+
+	// 1. System Tables (Ye HAR database mein hone chahiyen)
+	// (Users, Roles, Permissions Master DB mein bhi chahiye Super Admin ke liye)
+	if err := db.AutoMigrate(
 		&models.User{},
 		&models.Role{},
 		&models.Permission{},
-		// Business Logic
-		&models.Category{},
-		&models.Product{},
-		&models.Inventory{},
-		&models.AuditLog{},
-	)
+	); err != nil {
+		return nil, fmt.Errorf("failed to migrate system tables: %w", err)
+	}
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to migrate tenant db %s: %w", actualDBName, err)
+	// 2. Business Tables (Ye Master DB mein NAHI banne chahiyen)
+	if actualDBName != "master_db" {
+		if err := db.AutoMigrate(
+			&models.Category{},
+			&models.Product{},
+			&models.Inventory{},
+			// &models.AuditLog{}, // Agar AuditLog model hai to uncomment kar lena
+		); err != nil {
+			return nil, fmt.Errorf("failed to migrate business tables: %w", err)
+		}
 	}
 
 	tm.tenantDBs[tenant.ID] = db
@@ -118,7 +126,6 @@ func (tm *TenantDBManager) createDatabase(dbName string) error {
 	return db.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`", dbName)).Error
 }
 
-// Cache Clear karne ke liye (Admin use)
 func (tm *TenantDBManager) ClearCache() {
 	tm.mutex.Lock()
 	defer tm.mutex.Unlock()

@@ -20,7 +20,7 @@ func NewInventoryRepository(db *gorm.DB) InventoryRepository {
 }
 
 func (r *inventoryRepository) UpdateStock(productID uint, quantity int) error {
-	// Simple update: Set new quantity
+
 	return r.db.Model(&models.Inventory{}).
 		Where("product_id = ?", productID).
 		Update("quantity", quantity).Error
@@ -28,7 +28,7 @@ func (r *inventoryRepository) UpdateStock(productID uint, quantity int) error {
 
 func (r *inventoryRepository) GetLowStockProducts(threshold int) ([]models.Inventory, error) {
 	var inv []models.Inventory
-	// Find items where quantity < alert_level
+
 	err := r.db.Preload("Product").Where("quantity <= ?", threshold).Find(&inv).Error
 	return inv, err
 }

@@ -38,6 +38,16 @@ func (r *catalogRepository) ListCategories() ([]models.Category, error) {
 }
 
 func (r *catalogRepository) CreateProduct(product *models.Product) error {
+
+	if product.Inventory == nil {
+		product.Inventory = &models.Inventory{
+			TenantID:      product.TenantID, // Tenant ID same honi chahiye
+			Quantity:      0,                // Default Stock 0
+			LowStockAlert: 10,               // Default Alert Level
+			Location:      "Main Warehouse", // Default Location
+		}
+	}
+
 	return r.db.Create(product).Error
 }
 

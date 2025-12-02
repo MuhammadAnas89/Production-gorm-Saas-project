@@ -45,6 +45,10 @@ func (s *TenantService) CreateTenant(req *CreateTenantRequest) (*models.Tenant, 
 		config.MasterDB.Where("type = ?", models.PlanFree).First(&freePlan)
 		planID = freePlan.ID
 	}
+	apiKey, err := utils.GenerateSecureKey()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate api key: %v", err)
+	}
 
 	// 4. Create Tenant Record (Master DB)
 	tenant := &models.Tenant{
@@ -53,6 +57,7 @@ func (s *TenantService) CreateTenant(req *CreateTenantRequest) (*models.Tenant, 
 		DBName:       dbName,
 		IsActive:     true,
 		PlanID:       planID,
+		APIKey:       apiKey,
 	}
 
 	tx := config.MasterDB.Begin()

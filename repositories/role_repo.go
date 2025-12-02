@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"fmt"
 	"go-multi-tenant/models"
 
 	"gorm.io/gorm"
@@ -26,6 +27,7 @@ func (r *roleRepository) Create(role *models.Role) error {
 }
 
 func (r *roleRepository) List() ([]models.Role, error) {
+	fmt.Println(">>> DEBUG: Main NAYA code hoon, Preload Permissions chala raha hoon <<<")
 	var roles []models.Role
 	err := r.db.Preload("Permissions").Find(&roles).Error
 	return roles, err
@@ -48,7 +50,6 @@ func (r *roleRepository) AssignPermissions(roleID uint, permIDs []uint) error {
 		return err
 	}
 
-	// Replace existing permissions with new ones
 	return r.db.Model(&role).Association("Permissions").Replace(&perms)
 }
 

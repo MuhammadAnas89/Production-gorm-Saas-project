@@ -16,7 +16,6 @@ var MasterDB *gorm.DB
 func InitMasterDB(cfg *Config) error {
 	var err error
 
-	// Logger taaki errors nazar ayen
 	newLogger := logger.New(
 		log.New(log.Writer(), "\r\n", log.LstdFlags),
 		logger.Config{
@@ -34,7 +33,6 @@ func InitMasterDB(cfg *Config) error {
 		return fmt.Errorf("failed to connect to master database: %w", err)
 	}
 
-	// Connection Pool Settings
 	sqlDB, _ := MasterDB.DB()
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetMaxOpenConns(100)
@@ -58,7 +56,6 @@ func InitMasterDB(cfg *Config) error {
 	return nil
 }
 
-// Getter Function (Best Practice)
 func GetMasterDB() *gorm.DB {
 	return MasterDB
 }

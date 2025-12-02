@@ -27,12 +27,11 @@ func (r *tenantRepository) Create(tenant *models.Tenant) error {
 
 func (r *tenantRepository) GetByID(id uint) (*models.Tenant, error) {
 	var tenant models.Tenant
-	// ✅ Plan Preload karna lazmi hai limits check karne ke liye
+
 	err := r.db.Preload("Plan").First(&tenant, id).Error
 	return &tenant, err
 }
 
-// Master DB operations
 func (r *tenantRepository) GetGlobalIdentity(email string) (*models.GlobalIdentity, error) {
 	var identity models.GlobalIdentity
 	err := r.db.Where("email = ?", email).First(&identity).Error

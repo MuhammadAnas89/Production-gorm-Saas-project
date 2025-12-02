@@ -36,7 +36,7 @@ func TenantDBMiddleware() gin.HandlerFunc {
 				return
 			}
 			// Cache Set (30 Minutes Expiry)
-			cacheService := services.NewCacheService()
+
 			_ = cacheService.Set(cacheKey, tenant, 30*time.Minute)
 		}
 

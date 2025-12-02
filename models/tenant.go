@@ -19,7 +19,7 @@ type Tenant struct {
 	DatabaseType DatabaseType `gorm:"type:varchar(50);not null" json:"database_type"`
 	DBName       string       `gorm:"type:varchar(255);not null" json:"db_name"`
 	IsActive     bool         `gorm:"default:true" json:"is_active"`
-
+	APIKey       string       `gorm:"type:varchar(64);uniqueIndex" json:"api_key"`
 	// Plan Information
 	PlanID     uint       `json:"plan_id"`
 	Plan       *Plan      `gorm:"foreignKey:PlanID" json:"plan,omitempty"`
