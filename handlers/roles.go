@@ -18,7 +18,6 @@ func NewRoleHandler(roleService *services.RoleService) *RoleHandler {
 	return &RoleHandler{roleService: roleService}
 }
 
-// 1. Create Role
 func (h *RoleHandler) CreateRole(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 	tenantID := c.MustGet("tenantID").(uint)
@@ -37,11 +36,10 @@ func (h *RoleHandler) CreateRole(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"message": "Role created", "role": role})
 }
 
-// 2. List Roles
 func (h *RoleHandler) ListRoles(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-
-	roles, err := h.roleService.ListRoles(tenantDB)
+	tenantID := c.MustGet("tenantID").(uint)
+	roles, err := h.roleService.ListRoles(tenantDB, tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -50,7 +48,6 @@ func (h *RoleHandler) ListRoles(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": roles})
 }
 
-// 3. Get Role by ID
 func (h *RoleHandler) GetRole(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 	id, _ := strconv.Atoi(c.Param("id"))
@@ -64,7 +61,6 @@ func (h *RoleHandler) GetRole(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": role})
 }
 
-// 4. Update Permissions for a Role
 func (h *RoleHandler) UpdatePermissions(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 	roleID, _ := strconv.Atoi(c.Param("id"))

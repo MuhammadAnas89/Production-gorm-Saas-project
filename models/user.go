@@ -8,7 +8,7 @@ import (
 
 type User struct {
 	ID       uint   `gorm:"primaryKey" json:"id"`
-	TenantID uint   `gorm:"not null;index" json:"tenant_id"`
+	TenantID uint   `gorm:"uniqueIndex:idx_email_tenant;not null" json:"tenant_id"`
 	Username string `gorm:"type:varchar(255);not null" json:"username"`
 	Email    string `gorm:"type:varchar(255);uniqueIndex:idx_email_tenant;not null" json:"email"`
 	Password string `gorm:"type:varchar(255);not null" json:"-"`
@@ -21,9 +21,9 @@ type User struct {
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
-// Helper: Check permissions
 func (u *User) HasPermission(permName string) bool {
 	for _, role := range u.Roles {
+
 		for _, perm := range role.Permissions {
 			if perm.Name == permName {
 				return true
@@ -41,8 +41,6 @@ func (u *User) HasRole(roleName string) bool {
 	}
 	return false
 }
-
-// models/user.go ke end mein add karein
 
 func (u *User) GetPermissions() []string {
 	permMap := make(map[string]bool)

@@ -6,41 +6,39 @@ import (
 )
 
 type Config struct {
-	ServerPort string
-
-	// Master Database Connection String
+	ServerPort  string
 	MasterDBDSN string
 
-	// Tenant Database Details (Taaki hum code mein dynamic connection bana saken)
+	// Database Connection Params
 	DBHost     string
 	DBUser     string
 	DBPassword string
 
-	// Redis
 	RedisAddr string
 	RedisPass string
+
+	// ✅ JWT Secret added here
+	JWTSecret string
 }
 
 func Load() *Config {
-	// Defaults set kar rahe hain agar env file na ho
 	dbHost := getEnv("DB_HOST", "localhost")
 	dbUser := getEnv("DB_USER", "root")
 	dbPassword := getEnv("DB_PASSWORD", "")
 
-	// Master DB ka DSN default banate hain
 	defaultMasterDSN := fmt.Sprintf("%s:%s@tcp(%s:3306)/master_db?charset=utf8mb4&parseTime=True&loc=Local",
 		dbUser, dbPassword, dbHost)
 
 	return &Config{
 		ServerPort:  getEnv("SERVER_PORT", ":8080"),
 		MasterDBDSN: getEnv("MASTER_DB_DSN", defaultMasterDSN),
-
-		DBHost:     dbHost,
-		DBUser:     dbUser,
-		DBPassword: dbPassword,
-
-		RedisAddr: getEnv("REDIS_ADDR", "localhost:6379"),
-		RedisPass: getEnv("REDIS_PASSWORD", ""),
+		DBHost:      dbHost,
+		DBUser:      dbUser,
+		DBPassword:  dbPassword,
+		RedisAddr:   getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPass:   getEnv("REDIS_PASSWORD", ""),
+		// ✅ Default secret for dev, change in prod
+		JWTSecret: getEnv("JWT_SECRET", "super_secret_key_change_me_in_prod"),
 	}
 }
 

@@ -17,9 +17,10 @@ func NewInventoryHandler(invService *services.InventoryService) *InventoryHandle
 	return &InventoryHandler{invService: invService}
 }
 
-// 1. Update Stock
 func (h *InventoryHandler) UpdateStock(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
+
+	tenantID := c.MustGet("tenantID").(uint)
 
 	var req struct {
 		ProductID uint `json:"product_id" binding:"required"`
@@ -31,7 +32,7 @@ func (h *InventoryHandler) UpdateStock(c *gin.Context) {
 		return
 	}
 
-	if err := h.invService.UpdateStock(tenantDB, req.ProductID, req.Quantity); err != nil {
+	if err := h.invService.UpdateStock(tenantDB, req.ProductID, tenantID, req.Quantity); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -43,10 +44,12 @@ func (h *InventoryHandler) UpdateStock(c *gin.Context) {
 func (h *InventoryHandler) GetLowStockAlerts(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 
+	tenantID := c.MustGet("tenantID").(uint)
+
 	thresholdStr := c.DefaultQuery("threshold", "10")
 	threshold, _ := strconv.Atoi(thresholdStr)
 
-	items, err := h.invService.GetLowStockAlerts(tenantDB, threshold)
+	items, err := h.invService.GetLowStockAlerts(tenantDB, tenantID, threshold)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

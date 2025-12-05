@@ -9,7 +9,8 @@ import (
 type TenantRepository interface {
 	Create(tenant *models.Tenant) error
 	GetByID(id uint) (*models.Tenant, error)
-	GetGlobalIdentity(email string) (*models.GlobalIdentity, error) // Loop fix
+	GetGlobalIdentity(email string) (*models.GlobalIdentity, error)
+	GetTenantWithPlan(id uint) (*models.Tenant, error)
 	CreateGlobalIdentity(identity *models.GlobalIdentity) error
 }
 
@@ -31,7 +32,12 @@ func (r *tenantRepository) GetByID(id uint) (*models.Tenant, error) {
 	err := r.db.Preload("Plan").First(&tenant, id).Error
 	return &tenant, err
 }
+func (r *tenantRepository) GetTenantWithPlan(id uint) (*models.Tenant, error) {
+	var tenant models.Tenant
 
+	err := r.db.Preload("Plan").First(&tenant, id).Error
+	return &tenant, err
+}
 func (r *tenantRepository) GetGlobalIdentity(email string) (*models.GlobalIdentity, error) {
 	var identity models.GlobalIdentity
 	err := r.db.Where("email = ?", email).First(&identity).Error

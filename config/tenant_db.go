@@ -27,13 +27,11 @@ func InitTenantManager(cfg *Config) {
 	}
 }
 
-// GetTenantDB: Cache check karta hai, agar na mile to connect karta hai
 func (tm *TenantDBManager) GetTenantDB(tenant *models.Tenant) (*gorm.DB, error) {
 	if tenant.ID == 0 {
 		return nil, fmt.Errorf("tenant ID cannot be zero")
 	}
 
-	// 1. Check Cache
 	tm.mutex.RLock()
 	if db, exists := tm.tenantDBs[tenant.ID]; exists {
 		tm.mutex.RUnlock()
@@ -41,7 +39,6 @@ func (tm *TenantDBManager) GetTenantDB(tenant *models.Tenant) (*gorm.DB, error) 
 	}
 	tm.mutex.RUnlock()
 
-	// 2. Initialize
 	return tm.initializeTenantDB(tenant)
 }
 
@@ -49,7 +46,7 @@ func (tm *TenantDBManager) initializeTenantDB(tenant *models.Tenant) (*gorm.DB, 
 	tm.mutex.Lock()
 	defer tm.mutex.Unlock()
 
-	// Double check
+	// Double check inside lock
 	if db, exists := tm.tenantDBs[tenant.ID]; exists {
 		return db, nil
 	}
@@ -73,12 +70,7 @@ func (tm *TenantDBManager) initializeTenantDB(tenant *models.Tenant) (*gorm.DB, 
 	sqlDB.SetMaxOpenConns(50)
 	sqlDB.SetConnMaxLifetime(30 * time.Minute)
 
-	// =====================================================
-	// ✅ FIX: Migrations Split kar di hain
-	// =====================================================
-
-	// 1. System Tables (Ye HAR database mein hone chahiyen)
-	// (Users, Roles, Permissions Master DB mein bhi chahiye Super Admin ke liye)
+	// 1. System Tables (Required for every tenant context)
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.Role{},
@@ -87,13 +79,15 @@ func (tm *TenantDBManager) initializeTenantDB(tenant *models.Tenant) (*gorm.DB, 
 		return nil, fmt.Errorf("failed to migrate system tables: %w", err)
 	}
 
-	// 2. Business Tables (Ye Master DB mein NAHI banne chahiyen)
+	// 2. Business Tables
+	// ✅ Logic Check: Ensure we don't accidentally migrate master_db with business logic
+	// although connection string prevents it usually.
 	if actualDBName != "master_db" {
 		if err := db.AutoMigrate(
 			&models.Category{},
 			&models.Product{},
 			&models.Inventory{},
-			// &models.AuditLog{}, // Agar AuditLog model hai to uncomment kar lena
+			&models.PurchaseOrder{},
 		); err != nil {
 			return nil, fmt.Errorf("failed to migrate business tables: %w", err)
 		}
@@ -113,6 +107,7 @@ func (tm *TenantDBManager) CreateSharedDatabase() error {
 }
 
 func (tm *TenantDBManager) createDatabase(dbName string) error {
+	// Connect without DB name to CREATE DATABASE
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:3306)/?charset=utf8mb4",
 		tm.config.DBUser, tm.config.DBPassword, tm.config.DBHost)
 
@@ -135,10 +130,4 @@ func (tm *TenantDBManager) ClearCache() {
 		sqlDB.Close()
 	}
 	tm.tenantDBs = make(map[uint]*gorm.DB)
-}
-
-func (tm *TenantDBManager) GetCachedTenantCount() int {
-	tm.mutex.RLock()
-	defer tm.mutex.RUnlock()
-	return len(tm.tenantDBs)
 }

@@ -36,7 +36,6 @@ func TenantDBMiddleware() gin.HandlerFunc {
 				return
 			}
 			// Cache Set (30 Minutes Expiry)
-
 			_ = cacheService.Set(cacheKey, tenant, 30*time.Minute)
 		}
 
@@ -52,18 +51,11 @@ func TenantDBMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Shared DB Scope Logic
-		if tenant.DatabaseType == models.SharedDB {
-			// Agar shared DB hai, to har query mein `WHERE tenant_id = ?` lagana zaroori hai
-			// GORM ka scoped session use karenge
-			scopedDB := tenantDB.Where("tenant_id = ?", tenant.ID)
-			c.Set("tenantDB", scopedDB)
-		} else {
-			c.Set("tenantDB", tenantDB)
-		}
+		// ✅ FIXED: Simple database set - NO scoping here
+		c.Set("tenantDB", tenantDB)
 
-		// Tenant Info context mein rakho (Limits check karne ke liye kaam ayegi)
-		c.Set("tenant", &tenant)
+		// ✅ Also store tenant info for use in services/handlers
+		c.Set("currentTenant", &tenant)
 
 		c.Next()
 	}

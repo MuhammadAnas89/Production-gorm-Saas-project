@@ -52,7 +52,7 @@ func InitMasterDB(cfg *Config) error {
 		return fmt.Errorf("failed to migrate master database: %w", err)
 	}
 
-	log.Println("✅ Master database connected and migrated successfully")
+	log.Println("Master database connected and migrated successfully")
 	return nil
 }
 

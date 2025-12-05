@@ -4,6 +4,7 @@ import (
 	"go-multi-tenant/config"
 	"go-multi-tenant/routes"
 	"go-multi-tenant/services"
+	"go-multi-tenant/utils" // ✅ Add this import
 	"log"
 	"os"
 
@@ -12,56 +13,60 @@ import (
 )
 
 func main() {
-	// 1. Load Configuration
+
+	// 1. Load Config
 	cfg := config.Load()
 
-	// 2. Initialize Master Database
+	// 2. Init Utils (JWT Secret) ✅ MOST IMPORTANT MISSING PART
+	// Agar ye nahi karoge to token generate/validate nahi hoga
+	utils.InitJWT(cfg.JWTSecret)
+
+	// 3. Init Master DB
 	if err := config.InitMasterDB(cfg); err != nil {
 		log.Fatal("❌ Failed to initialize master database:", err)
 	}
 
-	// 3. Initialize Redis (Optional but recommended)
+	// 4. Init Redis
 	if err := config.InitRedis(cfg); err != nil {
 		log.Println("⚠️  Warning: Redis connection failed. Cache will not work.", err)
 	}
 
-	// 4. Initialize Tenant Manager
+	// 5. Init Tenant Manager
 	config.InitTenantManager(cfg)
 
-	// 5. Create Shared Database (Agar exist nahi karta)
+	// 6. Create Shared Database (Physical DB creation if not exists)
 	if err := config.TenantManager.CreateSharedDatabase(); err != nil {
 		log.Printf("⚠️  Warning: Failed to create shared database: %v", err)
 	}
 
-	// 6. SEED MASTER DATA (Super Admin, Plans, Modules)
-	// Ye bohot zaroori step hai first run ke liye
+	// 7. Seed Master Data (Super Admin & Plans)
 	saUser := os.Getenv("SUPERADMIN_USERNAME")
 	saEmail := os.Getenv("SUPERADMIN_EMAIL")
 	saPass := os.Getenv("SUPERADMIN_PASSWORD")
 
-	log.Println("🌱 Seeding master data...")
+	log.Println("Seeding master data...")
 	if err := services.SeedMasterData(config.MasterDB, saUser, saEmail, saPass); err != nil {
-		log.Printf("⚠️  Warning: Failed to ensure master seed data: %v", err)
+		log.Printf("Warning: Failed to ensure master seed data: %v", err)
 	} else {
 		log.Println("✅ Master data seeded successfully")
 	}
 
-	// 7. Setup Router
+	// 8. Setup Router
 	router := gin.Default()
 
-	// CORS Setup (Taaki Frontend connect ho sake)
+	// CORS Setup
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"}, // Production mein isay specific domain karo (e.g. localhost:3000)
+		AllowOrigins:     []string{"*"}, // Production mein isay specific domain kar dena
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 	}))
 
-	// 8. Register Routes
+	// 9. Register Routes
 	routes.SetupRoutes(router)
 
-	// 9. Start Server
+	// 10. Start Server
 	serverPort := cfg.ServerPort
 	if serverPort == "" {
 		serverPort = ":8080"
@@ -69,6 +74,6 @@ func main() {
 
 	log.Printf("🚀 Server starting on port %s", serverPort)
 	if err := router.Run(serverPort); err != nil {
-		log.Fatal("❌ Failed to start server:", err)
+		log.Fatal("Failed to start server:", err)
 	}
 }

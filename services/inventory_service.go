@@ -14,13 +14,12 @@ func NewInventoryService() *InventoryService {
 }
 
 // Stock update karna (e.g., jab order place ho)
-func (s *InventoryService) UpdateStock(tenantDB *gorm.DB, productID uint, quantity int) error {
+func (s *InventoryService) UpdateStock(tenantDB *gorm.DB, productID uint, tenantID uint, quantity int) error {
 	repo := repositories.NewInventoryRepository(tenantDB)
-	return repo.UpdateStock(productID, quantity)
+	return repo.UpdateStock(productID, tenantID, quantity)
 }
 
-// Low stock items nikalna (Reporting ke liye)
-func (s *InventoryService) GetLowStockAlerts(tenantDB *gorm.DB, threshold int) ([]models.Inventory, error) {
+func (s *InventoryService) GetLowStockAlerts(tenantDB *gorm.DB, tenantID uint, threshold int) ([]models.Inventory, error) {
 	repo := repositories.NewInventoryRepository(tenantDB)
-	return repo.GetLowStockProducts(threshold)
+	return repo.GetLowStockProducts(tenantID, threshold)
 }

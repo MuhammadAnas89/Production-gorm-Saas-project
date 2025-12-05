@@ -15,41 +15,46 @@ func NewCatalogService() *CatalogService {
 	return &CatalogService{}
 }
 
-// === Product Logic ===
-
 func (s *CatalogService) CreateProduct(tenantDB *gorm.DB, tenantID uint, product *models.Product) error {
 	repo := repositories.NewCatalogRepository(tenantDB)
 
-	// 1. ✅ PLAN LIMIT CHECK (Products)
 	var tenant models.Tenant
 	config.GetMasterDB().Preload("Plan").First(&tenant, tenantID)
 
 	if tenant.Plan.MaxProducts > 0 {
-		currentCount, _ := repo.CountProducts()
+		currentCount, _ := repo.CountProducts(tenantID)
 		if int(currentCount) >= tenant.Plan.MaxProducts {
-			// ✅ FIX: Removed '!' and simplified the message
 			return fmt.Errorf("plan limit reached: you can only add %d products", tenant.Plan.MaxProducts)
 		}
 	}
 
-	// 2. Create Product
+	if product.Inventory == nil {
+		product.Inventory = &models.Inventory{
+			TenantID:      tenantID, // Important: TenantID link karna
+			Quantity:      0,
+			LowStockAlert: 10,
+			Location:      "Main Warehouse",
+		}
+	} else {
+
+		product.Inventory.TenantID = tenantID
+	}
+
 	product.TenantID = tenantID
 	return repo.CreateProduct(product)
 }
-
-func (s *CatalogService) ListProducts(tenantDB *gorm.DB, page, pageSize int) ([]models.Product, int64, error) {
+func (s *CatalogService) ListProducts(tenantDB *gorm.DB, tenantID uint, page, pageSize int) ([]models.Product, int64, error) {
 	repo := repositories.NewCatalogRepository(tenantDB)
 	offset := (page - 1) * pageSize
-	return repo.ListProducts(offset, pageSize)
-}
 
-// === Category Logic ===
+	return repo.ListProducts(tenantID, offset, pageSize)
+}
 
 func (s *CatalogService) CreateCategory(tenantDB *gorm.DB, tenantID uint, category *models.Category) error {
 	category.TenantID = tenantID
 	return repositories.NewCatalogRepository(tenantDB).CreateCategory(category)
 }
+func (s *CatalogService) ListCategories(tenantDB *gorm.DB, tenantID uint) ([]models.Category, error) {
 
-func (s *CatalogService) ListCategories(tenantDB *gorm.DB) ([]models.Category, error) {
-	return repositories.NewCatalogRepository(tenantDB).ListCategories()
+	return repositories.NewCatalogRepository(tenantDB).ListCategories(tenantID)
 }

@@ -7,7 +7,13 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var SecretKey = []byte("TUMHARA_SECRET_KEY_ENV_SE_LENA")
+// ✅ Remove hardcoded bytes, use variable
+var secretKey []byte
+
+// ✅ Init function to set secret from main.go
+func InitJWT(secret string) {
+	secretKey = []byte(secret)
+}
 
 type Claims struct {
 	UserID   uint   `json:"user_id"`
@@ -24,18 +30,18 @@ func GenerateToken(userID, tenantID uint, email, role string) (string, error) {
 		Email:    email,
 		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(12 * time.Hour)), // 12 Hours Expiry
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(12 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(SecretKey)
+	return token.SignedString(secretKey)
 }
 
 func ValidateToken(tokenString string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		return SecretKey, nil
+		return secretKey, nil
 	})
 
 	if err != nil {

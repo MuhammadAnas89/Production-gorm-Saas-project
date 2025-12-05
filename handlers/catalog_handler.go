@@ -40,11 +40,14 @@ func (h *CatalogHandler) CreateProduct(c *gin.Context) {
 
 func (h *CatalogHandler) ListProducts(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
+	// ✅ ADDED: TenantID extraction
+	tenantID := c.MustGet("tenantID").(uint)
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 
-	products, count, err := h.catalogService.ListProducts(tenantDB, page, pageSize)
+	// ✅ FIXED: Passing tenantID
+	products, count, err := h.catalogService.ListProducts(tenantDB, tenantID, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -80,8 +83,11 @@ func (h *CatalogHandler) CreateCategory(c *gin.Context) {
 
 func (h *CatalogHandler) ListCategories(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
+	// ✅ ADDED: TenantID
+	tenantID := c.MustGet("tenantID").(uint)
 
-	cats, err := h.catalogService.ListCategories(tenantDB)
+	// ✅ FIXED: Passing tenantID
+	cats, err := h.catalogService.ListCategories(tenantDB, tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

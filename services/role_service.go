@@ -23,9 +23,9 @@ func (s *RoleService) CreateRole(tenantDB *gorm.DB, tenantID uint, role *models.
 	return repo.Create(role)
 }
 
-func (s *RoleService) ListRoles(tenantDB *gorm.DB) ([]models.Role, error) {
+func (s *RoleService) ListRoles(tenantDB *gorm.DB, tenantID uint) ([]models.Role, error) {
 	repo := repositories.NewRoleRepository(tenantDB)
-	return repo.List()
+	return repo.List(tenantID)
 }
 
 func (s *RoleService) GetRole(tenantDB *gorm.DB, id uint) (*models.Role, error) {

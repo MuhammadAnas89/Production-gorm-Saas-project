@@ -16,7 +16,6 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Format: "Bearer <token>"
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token format"})
@@ -30,11 +29,10 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Claims ko context mein set karo taaki agle steps mein use ho sake
 		c.Set("userID", claims.UserID)
 		c.Set("tenantID", claims.TenantID)
 		c.Set("userEmail", claims.Email)
-		c.Set("userRole", claims.Role) // Basic role from JWT
+		c.Set("userRole", claims.Role)
 
 		c.Next()
 	}

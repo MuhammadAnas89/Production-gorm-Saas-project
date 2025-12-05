@@ -63,6 +63,7 @@ func SeedMasterData(db *gorm.DB, username, email, password string) error {
 		{Name: "Inventory Management", Description: "Track stock and warehouses"},
 		{Name: "Reporting", Description: "View sales and audit logs"},
 		{Name: "System Admin", Description: "Super Admin only features"},
+		{Name: "Purchase Management", Description: "Handle purchase orders and stock intake"},
 	}
 
 	for i := range modules {
@@ -97,6 +98,11 @@ func SeedMasterData(db *gorm.DB, username, email, password string) error {
 		{Name: "tenant:manage", Category: "system", ModuleID: &modules[5].ID},
 		{Name: "plan:manage", Category: "system", ModuleID: &modules[5].ID},
 		{Name: "system:manage", Category: "system", ModuleID: &modules[5].ID},
+
+		{Name: "purchase:create", Category: "purchase", ModuleID: &modules[6].ID},  // Stock Manager
+		{Name: "purchase:view", Category: "purchase", ModuleID: &modules[6].ID},    // Purchaser & Manager
+		{Name: "purchase:action", Category: "purchase", ModuleID: &modules[6].ID},  // Purchaser (Approve/Reject)
+		{Name: "purchase:receive", Category: "purchase", ModuleID: &modules[6].ID}, // Stock Manager
 	}
 
 	for i := range permissions {

@@ -18,7 +18,7 @@ func NewUserHandler(userService *services.UserService) *UserHandler {
 	return &UserHandler{userService: userService}
 }
 
-// 1. Create User (Already Sync)
+// 1. Create User
 func (h *UserHandler) CreateUser(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 	tenantID := c.MustGet("tenantID").(uint)
@@ -49,7 +49,6 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	userID := c.MustGet("userID").(uint)
 
-	// Current User pass karna zaroori hai agar hum logic lagayen ke "Sirf apni profile dekh sake"
 	var currentUser models.User
 	tenantDB.Preload("Roles").First(&currentUser, userID)
 
