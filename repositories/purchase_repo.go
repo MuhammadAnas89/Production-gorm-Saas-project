@@ -8,8 +8,8 @@ import (
 
 type PurchaseRepository interface {
 	Create(po *models.PurchaseOrder) error
-	GetByID(id uint, tenantID uint) (*models.PurchaseOrder, error)     // ✅ Added TenantID
-	List(tenantID uint, status string) ([]models.PurchaseOrder, error) // ✅ Added TenantID
+	GetByID(id uint, tenantID uint) (*models.PurchaseOrder, error)
+	List(tenantID uint, status string) ([]models.PurchaseOrder, error)
 	Update(po *models.PurchaseOrder) error
 }
 
@@ -27,7 +27,7 @@ func (r *purchaseRepository) Create(po *models.PurchaseOrder) error {
 
 func (r *purchaseRepository) GetByID(id uint, tenantID uint) (*models.PurchaseOrder, error) {
 	var po models.PurchaseOrder
-	// ✅ Fix: Security check
+
 	err := r.db.Preload("Product").
 		Where("id = ? AND tenant_id = ?", id, tenantID).
 		First(&po).Error
@@ -36,7 +36,7 @@ func (r *purchaseRepository) GetByID(id uint, tenantID uint) (*models.PurchaseOr
 
 func (r *purchaseRepository) List(tenantID uint, status string) ([]models.PurchaseOrder, error) {
 	var orders []models.PurchaseOrder
-	query := r.db.Preload("Product").Where("tenant_id = ?", tenantID) // ✅ Fix
+	query := r.db.Preload("Product").Where("tenant_id = ?", tenantID)
 
 	if status != "" {
 		query = query.Where("status = ?", status)

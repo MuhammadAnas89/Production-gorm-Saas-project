@@ -15,9 +15,7 @@ type UserRepository interface {
 	Delete(id uint) error
 	List(offset, limit int) ([]models.User, int64, error)
 	Count() (int64, error)
-
-	// Role Management
-	GetRoleByID(roleID uint) (*models.Role, error) // ✅ Added to keep Service clean
+	GetRoleByID(roleID uint) (*models.Role, error)
 	AssignRole(userID uint, roleID uint) error
 	RemoveRole(userID uint, roleID uint) error
 	ReplaceRole(userID uint, roleID uint) error
@@ -82,7 +80,6 @@ func (r *userRepository) Count() (int64, error) {
 	return count, err
 }
 
-// ✅ New Helper to fetch Role inside Repo
 func (r *userRepository) GetRoleByID(roleID uint) (*models.Role, error) {
 	var role models.Role
 	err := r.db.Preload("Permissions").First(&role, roleID).Error
@@ -132,8 +129,6 @@ func (r *userRepository) ReplaceRole(userID uint, roleID uint) error {
 		return err
 	}
 
-	// DB Logic yahan chipa di
-	// Pehle clear karo, phir naya lagao
 	if err := r.db.Model(&user).Association("Roles").Clear(); err != nil {
 		return err
 	}

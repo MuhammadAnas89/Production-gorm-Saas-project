@@ -7,8 +7,8 @@ import (
 )
 
 type InventoryRepository interface {
-	UpdateStock(productID uint, tenantID uint, quantity int) error                // ✅ Added TenantID
-	GetLowStockProducts(tenantID uint, threshold int) ([]models.Inventory, error) // ✅ Added TenantID
+	UpdateStock(productID uint, tenantID uint, quantity int) error
+	GetLowStockProducts(tenantID uint, threshold int) ([]models.Inventory, error)
 }
 
 type inventoryRepository struct {
@@ -20,7 +20,7 @@ func NewInventoryRepository(db *gorm.DB) InventoryRepository {
 }
 
 func (r *inventoryRepository) UpdateStock(productID uint, tenantID uint, quantity int) error {
-	// ✅ Fix: Added TenantID to Where clause
+
 	return r.db.Model(&models.Inventory{}).
 		Where("product_id = ? AND tenant_id = ?", productID, tenantID).
 		Update("quantity", quantity).Error
@@ -28,7 +28,7 @@ func (r *inventoryRepository) UpdateStock(productID uint, tenantID uint, quantit
 
 func (r *inventoryRepository) GetLowStockProducts(tenantID uint, threshold int) ([]models.Inventory, error) {
 	var inv []models.Inventory
-	// ✅ Fix: Filter by TenantID
+
 	err := r.db.Preload("Product").
 		Where("tenant_id = ? AND quantity <= ?", tenantID, threshold).
 		Find(&inv).Error

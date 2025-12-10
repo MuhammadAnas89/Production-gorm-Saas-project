@@ -26,8 +26,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input", "details": err.Error()})
 		return
 	}
-
-	// Service call (Loop Free & JWT)
 	user, token, err := h.authService.Login(input.Email, input.Password)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -36,12 +34,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Login successful",
-		"token":   token, // JWT Token
+		"token":   token,
 		"user": gin.H{
 			"id":       user.ID,
 			"username": user.Username,
 			"email":    user.Email,
-			"role":     user.Roles[0].Name, // Returning first role
+			"role":     user.Roles[0].Name,
 		},
 	})
 }

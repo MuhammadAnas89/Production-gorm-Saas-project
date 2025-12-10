@@ -29,8 +29,6 @@ func TenantDBMiddleware() gin.HandlerFunc {
 		cacheService := services.NewCacheService()
 		err := cacheService.Get(cacheKey, &tenant)
 		if err != nil {
-			// Cache Miss: Fetch from Master DB
-			// Preload Plan taaki limits bhi cache ho jayen
 			if dbErr := config.MasterDB.Preload("Plan").First(&tenant, tenantID).Error; dbErr != nil {
 				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Tenant not found or inactive"})
 				return
@@ -43,18 +41,14 @@ func TenantDBMiddleware() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Tenant account is suspended"})
 			return
 		}
-
-		// 3. Get Tenant Database Connection
+		// 3. Connect to Tenant DB
 		tenantDB, err := config.TenantManager.GetTenantDB(&tenant)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Failed to connect to tenant database"})
 			return
 		}
-
-		// ✅ FIXED: Simple database set - NO scoping here
 		c.Set("tenantDB", tenantDB)
 
-		// ✅ Also store tenant info for use in services/handlers
 		c.Set("currentTenant", &tenant)
 
 		c.Next()

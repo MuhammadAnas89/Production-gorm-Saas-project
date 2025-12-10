@@ -169,7 +169,7 @@ func SeedMasterData(db *gorm.DB, username, email, password string) error {
 			Email:    email,
 			TenantID: masterTenant.ID,
 		})
-		log.Println("✅ Super Admin Created")
+		log.Println("Super Admin Created")
 
 	case nil:
 		admin.Password = hashed

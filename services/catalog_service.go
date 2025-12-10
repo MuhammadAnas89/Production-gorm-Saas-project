@@ -30,7 +30,7 @@ func (s *CatalogService) CreateProduct(tenantDB *gorm.DB, tenantID uint, product
 
 	if product.Inventory == nil {
 		product.Inventory = &models.Inventory{
-			TenantID:      tenantID, // Important: TenantID link karna
+			TenantID:      tenantID,
 			Quantity:      0,
 			LowStockAlert: 10,
 			Location:      "Main Warehouse",

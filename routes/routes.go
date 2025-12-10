@@ -78,7 +78,7 @@ func SetupRoutes(router *gin.Engine) {
 	{
 
 		roles.POST("", middleware.PermissionMiddleware("role:manage"), roleHandler.CreateRole)
-		roles.GET("", middleware.PermissionMiddleware("user:read"), roleHandler.ListRoles) // User read wala bhi dekh sake
+		roles.GET("", middleware.PermissionMiddleware("user:read"), roleHandler.ListRoles)
 		roles.GET("/:id", middleware.PermissionMiddleware("role:manage"), roleHandler.GetRole)
 		roles.PUT("/:id/permissions", middleware.PermissionMiddleware("role:manage"), roleHandler.UpdatePermissions)
 	}

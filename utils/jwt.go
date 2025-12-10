@@ -7,10 +7,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// ✅ Remove hardcoded bytes, use variable
 var secretKey []byte
 
-// ✅ Init function to set secret from main.go
 func InitJWT(secret string) {
 	secretKey = []byte(secret)
 }

@@ -10,7 +10,6 @@ func SendMail() {
 
 	m := gomail.NewMessage()
 
-	// Kis ki taraf se mail jayegi
 	m.SetHeader("From", "muhammad.anas.khalid.13@gmail.com")
 
 	m.SetHeader("To", "211370152@gift.edu.pk")

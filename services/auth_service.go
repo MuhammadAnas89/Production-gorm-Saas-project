@@ -21,15 +21,12 @@ func NewAuthService(tenantRepo repositories.TenantRepository) *AuthService {
 	}
 }
 
-// Login: The "Loop-Free" Implementation
 func (s *AuthService) Login(email, password string) (*models.User, string, error) {
 
-	// 1. GLOBAL LOOKUP (Master DB)
-	// Check karo ye banda poore system mein kahan exist karta hai
 	identity, err := s.tenantRepo.GetGlobalIdentity(email)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, "", errors.New("invalid credentials") // User not found globally
+			return nil, "", errors.New("invalid credentials")
 		}
 		return nil, "", err
 	}
@@ -44,14 +41,11 @@ func (s *AuthService) Login(email, password string) (*models.User, string, error
 		return nil, "", errors.New("company account is suspended")
 	}
 
-	// 3. Connect to Specific Tenant DB
-	// Ab hamain loop chalane ki zaroorat nahi, seedha sahi DB mil gaya
 	tenantDB, err := config.TenantManager.GetTenantDB(tenant)
 	if err != nil {
 		return nil, "", errors.New("database connection failed")
 	}
 
-	// 4. Verify Credentials in Tenant DB
 	userRepo := repositories.NewUserRepository(tenantDB)
 	user, err := userRepo.GetByEmail(email)
 	if err != nil {

@@ -18,13 +18,12 @@ func NewUserHandler(userService *services.UserService) *UserHandler {
 	return &UserHandler{userService: userService}
 }
 
-// 1. Create User
+
 func (h *UserHandler) CreateUser(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 	tenantID := c.MustGet("tenantID").(uint)
 	userID := c.MustGet("userID").(uint)
 
-	// Load Current User for permissions
 	var currentUser models.User
 	tenantDB.Preload("Roles.Permissions").First(&currentUser, userID)
 

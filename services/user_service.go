@@ -26,7 +26,6 @@ type CreateUserRequest struct {
 	RoleID   uint   `json:"role_id"`
 }
 
-// --- Helpers ---
 func isValidEmail(email string) bool {
 	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 	return emailRegex.MatchString(email)
@@ -34,20 +33,15 @@ func isValidEmail(email string) bool {
 
 func clearUserCache(tenantID uint) {
 	cacheKey := fmt.Sprintf("tenant:%d:users:list", tenantID)
-	// Make sure NewCacheService is available in your services package
 	cacheService := NewCacheService()
 	_ = cacheService.Delete(cacheKey)
 }
 
-// --- Core Functions ---
-
 func (s *UserService) CreateUser(tenantDB *gorm.DB, tenantID uint, req *CreateUserRequest, currentUser *models.User) (*models.User, error) {
-	// 1. Check Permissions
 	if !currentUser.HasPermission("user:create") {
 		return nil, errors.New("insufficient permissions")
 	}
 
-	// 2. Plan Limit Check
 	var tenant models.Tenant
 	if err := config.GetMasterDB().Preload("Plan").First(&tenant, tenantID).Error; err != nil {
 		return nil, errors.New("failed to load tenant info")
@@ -61,14 +55,11 @@ func (s *UserService) CreateUser(tenantDB *gorm.DB, tenantID uint, req *CreateUs
 		}
 	}
 
-	// 3. Check Global Uniqueness
 	var count int64
 	config.GetMasterDB().Model(&models.GlobalIdentity{}).Where("email = ?", req.Email).Count(&count)
 	if count > 0 {
 		return nil, errors.New("email already exists in the system")
 	}
-
-	// 4. Create User
 	hashedPassword, _ := utils.HashPassword(req.Password)
 	user := &models.User{
 		TenantID: tenantID,
@@ -83,15 +74,11 @@ func (s *UserService) CreateUser(tenantDB *gorm.DB, tenantID uint, req *CreateUs
 		return nil, err
 	}
 
-	// 5. Assign Role (Using Repo method now)
 	if req.RoleID > 0 {
 		if err := userRepo.AssignRole(user.ID, req.RoleID); err != nil {
-			// Log error but don't fail user creation necessarily, or handle rollback
 			fmt.Printf("Failed to assign role: %v\n", err)
 		}
 	}
-
-	// 6. Register Global Identity
 	config.GetMasterDB().Create(&models.GlobalIdentity{
 		Email:    req.Email,
 		TenantID: tenantID,
@@ -103,8 +90,6 @@ func (s *UserService) CreateUser(tenantDB *gorm.DB, tenantID uint, req *CreateUs
 
 func (s *UserService) GetUser(tenantDB *gorm.DB, userID uint, currentUser *models.User) (*models.User, error) {
 	userRepo := repositories.NewUserRepository(tenantDB)
-
-	// Access control for Tenant User
 	if currentUser.HasRole("Tenant User") {
 		if currentUser.ID != userID {
 			return nil, errors.New("access denied - can only view own profile")
@@ -141,8 +126,6 @@ func (s *UserService) UpdateUser(tenantDB *gorm.DB, userID uint, updateData map[
 	if user.TenantID != currentUser.TenantID {
 		return nil, errors.New("access denied")
 	}
-
-	// Username update
 	if username, exists := updateData["username"]; exists {
 		existingUser, err := userRepo.GetByUsername(username.(string))
 		if err == nil && existingUser != nil && existingUser.ID != userID {
@@ -150,8 +133,6 @@ func (s *UserService) UpdateUser(tenantDB *gorm.DB, userID uint, updateData map[
 		}
 		user.Username = username.(string)
 	}
-
-	// Email update
 	if email, exists := updateData["email"]; exists {
 		emailStr := email.(string)
 		if !isValidEmail(emailStr) {
@@ -168,7 +149,6 @@ func (s *UserService) UpdateUser(tenantDB *gorm.DB, userID uint, updateData map[
 		user.IsActive = isActive.(bool)
 	}
 
-	// Role Update Logic (✅ NOW CLEANED)
 	if roleID, exists := updateData["role_id"]; exists {
 		var rID uint
 		switch v := roleID.(type) {
@@ -180,20 +160,16 @@ func (s *UserService) UpdateUser(tenantDB *gorm.DB, userID uint, updateData map[
 			rID = uint(v)
 		}
 
-		// 1. Verify role exists (Business Logic Check)
 		_, err := userRepo.GetRoleByID(rID)
 		if err != nil {
 			return nil, errors.New("role not found")
 		}
 
-		// 2. Perform DB Operation via Repo (✅ FIXED)
-		// Ab hum direct tenantDB calls nahi kar rahe
 		if err := userRepo.ReplaceRole(user.ID, rID); err != nil {
 			return nil, fmt.Errorf("failed to update role: %w", err)
 		}
 	}
 
-	// Update basic fields
 	if err := userRepo.Update(user); err != nil {
 		return nil, fmt.Errorf("failed to update user: %w", err)
 	}
@@ -239,14 +215,13 @@ func (s *UserService) ListUsers(tenantDB *gorm.DB, currentUser *models.User) ([]
 	cacheKey := fmt.Sprintf("tenant:%d:users:list", currentUser.TenantID)
 	var cachedUsers []models.User
 
-	// Try Cache
 	err := cacheService.Get(cacheKey, &cachedUsers)
 	if err == nil {
-		// fmt.Println("🔥 REDIS CACHE HIT!")
+		// fmt.Println("REDIS CACHE HIT!")
 		return cachedUsers, nil
 	}
 
-	// fmt.Println("🐢 REDIS MISS!")
+	// fmt.Println("REDIS MISS!")
 	userRepo := repositories.NewUserRepository(tenantDB)
 
 	// Fetching all users (pass appropriate limits if pagination needed)
@@ -255,7 +230,6 @@ func (s *UserService) ListUsers(tenantDB *gorm.DB, currentUser *models.User) ([]
 		return nil, fmt.Errorf("failed to fetch users: %w", err)
 	}
 
-	// Set Cache
 	_ = cacheService.Set(cacheKey, users, 0)
 	return users, nil
 }

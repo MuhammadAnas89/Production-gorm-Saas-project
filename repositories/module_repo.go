@@ -28,7 +28,6 @@ func (r *moduleRepository) Create(module *models.Module) error {
 
 func (r *moduleRepository) List() ([]models.Module, error) {
 	var modules []models.Module
-	// Preload permissions taaki pata chale is module mein kya kya allow hai
 	err := r.db.Preload("Permissions").Find(&modules).Error
 	return modules, err
 }

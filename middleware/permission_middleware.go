@@ -3,7 +3,7 @@ package middleware
 import (
 	"fmt"
 	"go-multi-tenant/models"
-	"go-multi-tenant/services" // ✅ Services import karna zaroori hai
+	"go-multi-tenant/services"
 	"net/http"
 	"time"
 
@@ -17,14 +17,11 @@ func PermissionMiddleware(requiredPermission string) gin.HandlerFunc {
 		tenantID := c.MustGet("tenantID").(uint)
 		tenantDB := c.MustGet("tenantDB").(*gorm.DB)
 
-		// ✅ Service Initialize karo
 		cacheService := services.NewCacheService()
 
-		// 1. Check Permissions in Cache first
 		cacheKey := fmt.Sprintf("user_perms:%d:%d", tenantID, userID)
 		var permissions []string
 
-		// ✅ config.GetCacheStruct ki jagah cacheService.Get use karo
 		err := cacheService.Get(cacheKey, &permissions)
 
 		if err == nil {
@@ -50,7 +47,7 @@ func PermissionMiddleware(requiredPermission string) gin.HandlerFunc {
 		permissions = user.GetPermissions() // Helper method from models/user.go
 
 		// 4. Save to Redis (10 Minutes Cache)
-		// ✅ config.SetCacheStruct ki jagah cacheService.Set use karo
+		// config.SetCacheStruct ki jagah cacheService.Set use karo
 		_ = cacheService.Set(cacheKey, permissions, 10*time.Minute)
 
 		// 5. Verify

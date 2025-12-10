@@ -9,14 +9,12 @@ import (
 )
 
 type PurchaseService struct {
-	// Field ki zaroorat nahi kyunki hum har method mein DB inject kar rahe hain
 }
 
 func NewPurchaseService() *PurchaseService {
 	return &PurchaseService{}
 }
 
-// 1. Create Request
 func (s *PurchaseService) CreateRequest(tenantDB *gorm.DB, tenantID uint, userID uint, req *models.PurchaseOrder) error {
 	req.TenantID = tenantID
 	req.RequestedBy = userID
@@ -26,11 +24,9 @@ func (s *PurchaseService) CreateRequest(tenantDB *gorm.DB, tenantID uint, userID
 	return repo.Create(req)
 }
 
-// 2. Update Request (Mistake 1 Fixed: Added tenantID)
 func (s *PurchaseService) UpdateRequest(tenantDB *gorm.DB, tenantID uint, orderID uint, quantity int, price float64) error {
 	repo := repositories.NewPurchaseRepository(tenantDB)
 
-	// ✅ Fixed: Passing tenantID to prevent accessing other tenant's order
 	order, err := repo.GetByID(orderID, tenantID)
 	if err != nil {
 		return err
@@ -50,7 +46,6 @@ func (s *PurchaseService) UpdateRequest(tenantDB *gorm.DB, tenantID uint, orderI
 func (s *PurchaseService) PurchaserAction(tenantDB *gorm.DB, tenantID uint, orderID uint, purchaserID uint, action string) error {
 	repo := repositories.NewPurchaseRepository(tenantDB)
 
-	// ✅ Fixed: Passing tenantID
 	order, err := repo.GetByID(orderID, tenantID)
 	if err != nil {
 		return err
@@ -74,7 +69,6 @@ func (s *PurchaseService) PurchaserAction(tenantDB *gorm.DB, tenantID uint, orde
 	return repo.Update(order)
 }
 
-// 4. Receive Order (Mistakes 3 & 4 Fixed)
 func (s *PurchaseService) ReceiveOrder(tenantDB *gorm.DB, tenantID uint, orderID uint) error {
 
 	return tenantDB.Transaction(func(tx *gorm.DB) error {

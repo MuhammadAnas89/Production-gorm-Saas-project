@@ -83,10 +83,10 @@ func (h *CatalogHandler) CreateCategory(c *gin.Context) {
 
 func (h *CatalogHandler) ListCategories(c *gin.Context) {
 	tenantDB := c.MustGet("tenantDB").(*gorm.DB)
-	// ✅ ADDED: TenantID
+	// ADDED: TenantID
 	tenantID := c.MustGet("tenantID").(uint)
 
-	// ✅ FIXED: Passing tenantID
+	// FIXED: Passing tenantID
 	cats, err := h.catalogService.ListCategories(tenantDB, tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

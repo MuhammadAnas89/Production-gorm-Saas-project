@@ -13,7 +13,6 @@ func NewInventoryService() *InventoryService {
 	return &InventoryService{}
 }
 
-// Stock update karna (e.g., jab order place ho)
 func (s *InventoryService) UpdateStock(tenantDB *gorm.DB, productID uint, tenantID uint, quantity int) error {
 	repo := repositories.NewInventoryRepository(tenantDB)
 	return repo.UpdateStock(productID, tenantID, quantity)

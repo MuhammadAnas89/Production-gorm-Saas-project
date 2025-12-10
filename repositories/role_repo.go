@@ -8,7 +8,7 @@ import (
 
 type RoleRepository interface {
 	Create(role *models.Role) error
-	List(tenantID uint) ([]models.Role, error) // ✅ Added TenantID
+	List(tenantID uint) ([]models.Role, error)
 	GetByID(id uint) (*models.Role, error)
 	AssignPermissions(roleID uint, permIDs []uint) error
 }
@@ -27,7 +27,7 @@ func (r *roleRepository) Create(role *models.Role) error {
 
 func (r *roleRepository) List(tenantID uint) ([]models.Role, error) {
 	var roles []models.Role
-	// ✅ Fix: Only show roles belonging to this tenant
+
 	err := r.db.Preload("Permissions").
 		Where("tenant_id = ?", tenantID).
 		Find(&roles).Error
@@ -47,8 +47,7 @@ func (r *roleRepository) AssignPermissions(roleID uint, permIDs []uint) error {
 	}
 
 	var perms []models.Permission
-	// Permissions global (system) hoti hain usually, to yahan tenant check zaroori nahi
-	// unless tumhare paas custom permissions hon.
+
 	if err := r.db.Where("id IN ?", permIDs).Find(&perms).Error; err != nil {
 		return err
 	}
